@@ -600,31 +600,31 @@ def main():
     [data-testid="stFileUploaderDropzone"] button {
         background: var(--surface-hi) !important;
         border: 1px solid var(--border) !important;
-        color: var(--text) !important;
+        border-radius: 2px !important;
+        padding: 6px 16px !important;
+        min-width: 110px !important;
+        font-size: 0 !important;
+        color: transparent !important;
+    }
+    [data-testid="stFileUploaderDropzone"] button * {
+        display: none !important;
+        font-size: 0 !important;
+        color: transparent !important;
+    }
+    [data-testid="stFileUploaderDropzone"] button::after {
+        content: "Browse files" !important;
+        display: inline-block !important;
         font-family: var(--mono) !important;
         font-size: 11px !important;
         font-weight: 500 !important;
         letter-spacing: 0.05em !important;
-        border-radius: 2px !important;
-        padding: 6px 16px !important;
-        position: relative !important;
-        overflow: visible !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
+        color: var(--text) !important;
     }
     [data-testid="stFileUploaderDropzone"] button:hover {
         border-color: var(--teal-border) !important;
+    }
+    [data-testid="stFileUploaderDropzone"] button:hover::after {
         color: var(--teal) !important;
-    }
-    [data-testid="stFileUploaderDropzone"] button p {
-        display: none !important;
-    }
-    [data-testid="stFileUploaderDropzone"] button::after {
-        content: "Browse files" !important;
-        font-family: var(--mono) !important;
-        font-size: 11px !important;
-        color: inherit !important;
     }
 
     /* Primary / run button */
