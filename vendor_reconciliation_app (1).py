@@ -532,7 +532,7 @@ def main():
     )
 
     # ── CSS injection ────────────────────────────────────────────────────
-    st.markdown("""
+    st.html("""
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
     <style>
     :root {
@@ -675,7 +675,7 @@ def main():
     ::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--teal-dim); }
     </style>
-    """, unsafe_allow_html=True)
+    """)
 
     # ── App header ───────────────────────────────────────────────────────
     st.markdown("""
