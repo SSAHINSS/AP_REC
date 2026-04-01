@@ -520,133 +520,330 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None):
     return out_buf.getvalue(), output_filename
 
 # ══════════════════════════════════════════════════════════════════════════
-#  STREAMLIT UI
+#  STREAMLIT UI  —  dark terminal aesthetic
 # ══════════════════════════════════════════════════════════════════════════
 
 def main():
     st.set_page_config(
-        page_title="AP Reconciliation",
-        page_icon="📊",
-        layout="centered"
+        page_title="AP · Reconciliation",
+        page_icon="◈",
+        layout="centered",
+        initial_sidebar_state="collapsed"
     )
 
-    # ── Password gate ────────────────────────────────────────────────────
-    password = st.text_input("Enter password to access this tool:", type="password")
-    if password != "reconcile2026":
-        st.warning("Please enter the correct password to continue.")
-        st.stop()
-
-    # ── Header ──────────────────────────────────────────────────────────
+    # ── CSS injection ────────────────────────────────────────────────────
     st.markdown("""
-        <h1 style='text-align:center; color:#1F4E79;'>📊 AP Vendor Reconciliation</h1>
-        <p style='text-align:center; color:#555; font-size:16px;'>
-            Upload your GL export and vendor statement files below, then click <b>Run Reconciliation</b>.
-            Your formatted Excel report will be ready to download in seconds.
-        </p>
-        <hr style='border:1px solid #ddd; margin-bottom:24px;'>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+    :root {
+        --bg:           #1A1D21;
+        --surface:      #22262D;
+        --surface-hi:   #292E38;
+        --teal:         #2DD4BF;
+        --teal-dim:     #14B8A6;
+        --teal-glow:    rgba(45,212,191,0.10);
+        --teal-border:  rgba(45,212,191,0.28);
+        --text:         #CDD5E0;
+        --text-bright:  #E8EDF3;
+        --muted:        #6B7A8D;
+        --dim:          #3A4255;
+        --border:       #252C3A;
+        --red:          #F87171;
+        --mono: 'JetBrains Mono', 'Courier New', monospace;
+        --sans: 'IBM Plex Sans', system-ui, sans-serif;
+    }
+
+    /* Hide Streamlit chrome */
+    #MainMenu, footer { visibility: hidden !important; }
+    [data-testid="stToolbar"],
+    [data-testid="stDecoration"],
+    [data-testid="stHeader"] { display: none !important; }
+
+    /* Base */
+    .stApp, [data-testid="stAppViewContainer"],
+    [data-testid="stBottom"],
+    section[data-testid="stSidebar"] {
+        background-color: var(--bg) !important;
+    }
+    .main .block-container {
+        background-color: var(--bg) !important;
+        padding-top: 2.5rem !important;
+        padding-bottom: 3rem !important;
+        max-width: 660px !important;
+    }
+
+    /* Text */
+    .stApp p, .stApp div, .stApp span,
+    .stApp label, .stApp li, .stApp small,
+    .stMarkdown { color: var(--text) !important; font-family: var(--sans) !important; }
+
+    /* File uploader zone */
+    [data-testid="stFileUploader"] {
+        background: var(--surface) !important;
+        border: 1px dashed var(--border) !important;
+        border-radius: 3px !important;
+        padding: 4px !important;
+        transition: border-color 0.2s, background 0.2s !important;
+    }
+    [data-testid="stFileUploader"]:hover {
+        background: var(--surface-hi) !important;
+        border-color: var(--teal-border) !important;
+    }
+    [data-testid="stFileUploaderDropzone"] { background: transparent !important; }
+    [data-testid="stFileUploaderDropzone"] > div { color: var(--muted) !important; }
+    [data-testid="stFileUploaderDropzoneInstructions"] span,
+    [data-testid="stFileUploaderDropzoneInstructions"] small {
+        color: var(--muted) !important;
+        font-family: var(--mono) !important;
+        font-size: 12px !important;
+    }
+
+    /* Primary / run button */
+    .stButton > button {
+        background: transparent !important;
+        border: 1px solid var(--teal-dim) !important;
+        color: var(--teal) !important;
+        font-family: var(--mono) !important;
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.14em !important;
+        text-transform: uppercase !important;
+        padding: 14px 24px !important;
+        border-radius: 2px !important;
+        width: 100% !important;
+        transition: all 0.2s !important;
+        box-shadow: none !important;
+    }
+    .stButton > button:hover:not(:disabled) {
+        background: var(--teal-glow) !important;
+        border-color: var(--teal) !important;
+        box-shadow: 0 0 20px var(--teal-glow) !important;
+    }
+    .stButton > button:disabled {
+        border-color: var(--dim) !important;
+        color: var(--dim) !important;
+        opacity: 1 !important;
+        cursor: not-allowed !important;
+    }
+
+    /* Download button */
+    [data-testid="stDownloadButton"] > button {
+        background: var(--teal-dim) !important;
+        border: none !important;
+        color: #081413 !important;
+        font-family: var(--mono) !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.14em !important;
+        text-transform: uppercase !important;
+        padding: 15px 24px !important;
+        border-radius: 2px !important;
+        width: 100% !important;
+        transition: all 0.2s !important;
+    }
+    [data-testid="stDownloadButton"] > button:hover {
+        background: var(--teal) !important;
+        box-shadow: 0 0 28px var(--teal-glow) !important;
+    }
+
+    /* Password input */
+    .stTextInput > div > div > input {
+        background: var(--surface) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 2px !important;
+        color: var(--teal) !important;
+        font-family: var(--mono) !important;
+        font-size: 14px !important;
+        letter-spacing: 0.06em !important;
+        caret-color: var(--teal) !important;
+        padding: 10px 14px !important;
+    }
+    .stTextInput > div > div > input:focus {
+        border-color: var(--teal-dim) !important;
+        box-shadow: 0 0 0 1px var(--teal-dim), 0 0 14px var(--teal-glow) !important;
+        outline: none !important;
+    }
+    .stTextInput > div > div > input::placeholder { color: var(--dim) !important; }
+
+    /* Spinner */
+    [data-testid="stSpinner"] > div { border-top-color: var(--teal) !important; }
+    [data-testid="stSpinner"] p { color: var(--muted) !important; font-family: var(--mono) !important; font-size: 12px !important; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--teal-dim); }
+    </style>
     """, unsafe_allow_html=True)
 
-    # ── Step 1: GL File ─────────────────────────────────────────────────
-    st.markdown("### 1️⃣ &nbsp; Upload GL Export (CSV)")
-    gl_upload = st.file_uploader(
-        "Drag and drop your GL CSV file here, or click to browse",
-        type=["csv"],
-        key="gl_file",
+    # ── App header ───────────────────────────────────────────────────────
+    st.markdown("""
+    <div style="border-bottom:1px solid #252C3A; padding-bottom:20px; margin-bottom:36px;">
+        <div style="display:flex; align-items:baseline; gap:14px; margin-bottom:5px;">
+            <span style="font-family:'JetBrains Mono',monospace; font-size:21px; font-weight:700;
+                         color:#2DD4BF; letter-spacing:-0.01em;">◈ AP·REC</span>
+            <span style="font-family:'JetBrains Mono',monospace; font-size:10px; color:#3A4255;
+                         letter-spacing:0.18em; text-transform:uppercase;">v4.0</span>
+        </div>
+        <div style="font-family:'IBM Plex Sans',sans-serif; font-size:13px; color:#6B7A8D;
+                    font-weight:300; letter-spacing:0.03em;">
+            vendor statement reconciliation processor
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── helper: section label ────────────────────────────────────────────
+    def section(num, title, hint=""):
+        hint_span = (f'<span style="font-family:\'IBM Plex Sans\',sans-serif; font-size:12px;'
+                     f' color:#3A4255; font-weight:300; margin-left:10px;">{hint}</span>') if hint else ""
+        st.markdown(f"""
+        <div style="margin-bottom:10px; margin-top:2px; display:flex; align-items:center;">
+            <span style="font-family:'JetBrains Mono',monospace; font-size:10px;
+                         color:#3A4255; letter-spacing:0.2em; text-transform:uppercase;">// {num}</span>
+            <span style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:600;
+                         color:#CDD5E0; letter-spacing:0.1em; text-transform:uppercase;
+                         margin-left:12px;">{title}</span>
+            {hint_span}
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── helper: inline status line ───────────────────────────────────────
+    def status(msg, color="#2DD4BF", prefix="✓"):
+        st.markdown(f"""
+        <div style="font-family:'JetBrains Mono',monospace; font-size:12px;
+                    color:{color}; margin-top:6px; line-height:1.8;">
+            {prefix}&nbsp;&nbsp;{msg}
+        </div>""", unsafe_allow_html=True)
+
+    def gap(px=24):
+        st.markdown(f'<div style="margin-bottom:{px}px;"></div>', unsafe_allow_html=True)
+
+    # ── 01  Access Key ───────────────────────────────────────────────────
+    section("01", "Access Key")
+    password = st.text_input(
+        "key", type="password",
+        placeholder="enter access key…",
         label_visibility="collapsed"
+    )
+    if password != "reconcile2026":
+        if password:
+            status("incorrect key — try again", color="#F87171", prefix="✕")
+        else:
+            st.markdown("""<div style="font-family:'JetBrains Mono',monospace; font-size:12px;
+                color:#3A4255; margin-top:6px;">─&nbsp;&nbsp;awaiting authentication</div>""",
+                unsafe_allow_html=True)
+        st.stop()
+    status("authenticated")
+    gap(32)
+
+    # ── 02  GL Export ────────────────────────────────────────────────────
+    section("02", "GL Export", "accepts .csv")
+    gl_upload = st.file_uploader(
+        "gl", type=["csv"], key="gl_file", label_visibility="collapsed"
     )
     if gl_upload:
-        st.success(f"✅ GL file loaded: **{gl_upload.name}**")
+        status(gl_upload.name)
+    gap(28)
 
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # ── Step 2: Vendor Statements ────────────────────────────────────────
-    st.markdown("### 2️⃣ &nbsp; Upload Vendor Statements (PDF or XLSX)")
-    st.caption("You can select multiple files at once. File names must follow the usual format, e.g. *OE GFS March.pdf*")
+    # ── 03  Vendor Statements ────────────────────────────────────────────
+    section("03", "Vendor Statements", "accepts .pdf · .xlsx · multiple files OK")
     stmt_uploads = st.file_uploader(
-        "Drag and drop vendor statement files here, or click to browse",
-        type=["pdf", "xlsx"],
+        "statements", type=["pdf", "xlsx"],
         accept_multiple_files=True,
-        key="stmt_files",
-        label_visibility="collapsed"
+        key="stmt_files", label_visibility="collapsed"
     )
     if stmt_uploads:
-        st.success(f"✅ {len(stmt_uploads)} statement file(s) loaded: " +
-                   ", ".join(f"**{f.name}**" for f in stmt_uploads))
+        files_html = "".join(
+            f'<div style="padding:1px 0;">✓&nbsp;&nbsp;{f.name}</div>'
+            for f in stmt_uploads
+        )
+        st.markdown(f"""
+        <div style="font-family:'JetBrains Mono',monospace; font-size:12px;
+                    color:#2DD4BF; margin-top:8px; line-height:1.85;">
+            {files_html}
+        </div>""", unsafe_allow_html=True)
+    gap(32)
 
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # ── Run Button ───────────────────────────────────────────────────────
+    # ── 04  Execute ──────────────────────────────────────────────────────
+    section("04", "Execute")
     run_disabled = not (gl_upload and stmt_uploads)
     run_clicked  = st.button(
-        "🚀 Run Reconciliation",
-        type="primary",
+        "▶   RUN RECONCILIATION" if not run_disabled else "─   AWAITING INPUT",
         disabled=run_disabled,
         use_container_width=True
     )
-
-    if run_disabled and not (gl_upload and stmt_uploads):
-        st.info("Upload both a GL file and at least one vendor statement to enable the Run button.")
+    gap(8)
 
     # ── Processing ───────────────────────────────────────────────────────
     if run_clicked:
-        log_lines = []
-        log_placeholder = st.empty()
+        log_lines    = []
+        log_ph       = st.empty()
+        result_bytes = None
+        result_fn    = None
 
         def log(msg):
             log_lines.append(msg)
-            log_placeholder.markdown(
-                "<div style='background:#f0f4f8;border-radius:6px;padding:12px;"
-                "font-family:monospace;font-size:13px;max-height:260px;overflow-y:auto;'>"
-                + "<br>".join(log_lines) + "</div>",
-                unsafe_allow_html=True
+            indent = msg.startswith("  ")
+            rows = "".join(
+                f'<div style="padding:1px 0;">'
+                f'<span style="color:#3A4255; user-select:none;">{"&nbsp;&nbsp;" if m.startswith("  ") else "&gt;"}</span>'
+                f'&nbsp;'
+                f'<span style="color:{"#2DD4BF" if m.lower().startswith("done") else "#8A9BB0" if m.startswith("  ") else "#CDD5E0"};">'
+                f'{m.strip()}</span></div>'
+                for m in log_lines
             )
+            log_ph.markdown(f"""
+            <div style="background:#22262D; border:1px solid #252C3A; border-radius:3px;
+                        padding:14px 16px; font-family:'JetBrains Mono',monospace; font-size:12px;
+                        line-height:1.75; max-height:300px; overflow-y:auto; margin-top:16px;">
+                {rows}
+            </div>""", unsafe_allow_html=True)
 
-        # Save uploads to a temp directory
         tmpdir = tempfile.mkdtemp()
         try:
-            with st.spinner("Running reconciliation — please wait…"):
-                # Write GL
+            with st.spinner("processing…"):
                 gl_path = os.path.join(tmpdir, gl_upload.name)
                 with open(gl_path, "wb") as f:
                     f.write(gl_upload.getvalue())
-
-                # Write statements
                 stmt_paths = []
                 for su in stmt_uploads:
                     sp = os.path.join(tmpdir, su.name)
                     with open(sp, "wb") as f:
                         f.write(su.getvalue())
                     stmt_paths.append(sp)
-
-                result_bytes, result_filename = run_reconciliation(gl_path, stmt_paths, log_fn=log)
-
+                result_bytes, result_fn = run_reconciliation(gl_path, stmt_paths, log_fn=log)
         except ValueError as e:
-            st.error(f"⚠️ {e}")
-            result_bytes = None
+            st.markdown(f"""<div style="font-family:'JetBrains Mono',monospace; font-size:12px;
+                color:#F87171; margin-top:12px;">✕&nbsp;&nbsp;{e}</div>""", unsafe_allow_html=True)
         except Exception as e:
-            st.error(f"❌ An unexpected error occurred: {e}")
-            result_bytes = None
+            st.markdown(f"""<div style="font-family:'JetBrains Mono',monospace; font-size:12px;
+                color:#F87171; margin-top:12px;">✕&nbsp;&nbsp;unexpected error: {e}</div>""",
+                unsafe_allow_html=True)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
         if result_bytes:
-            st.success("✅ Reconciliation complete! Click below to download your report.")
+            gap(20)
             st.download_button(
-                label="📥 Download Excel Report",
+                label="⬇   DOWNLOAD REPORT",
                 data=result_bytes,
-                file_name=result_filename,
+                file_name=result_fn,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
-                type="primary"
             )
 
     # ── Footer ───────────────────────────────────────────────────────────
-    st.markdown("<hr style='border:1px solid #eee; margin-top:40px;'>", unsafe_allow_html=True)
-    st.markdown(
-        "<p style='text-align:center;color:#aaa;font-size:12px;'>"
-        "Vendor Statement Reconciliation Tool &nbsp;|&nbsp; Internal Use Only</p>",
-        unsafe_allow_html=True
-    )
+    st.markdown("""
+    <div style="border-top:1px solid #252C3A; margin-top:52px; padding-top:16px;
+                display:flex; justify-content:space-between;
+                font-family:'JetBrains Mono',monospace; font-size:10px;
+                color:#3A4255; letter-spacing:0.1em; text-transform:uppercase;">
+        <span>internal use only</span>
+        <span>◈ ap·rec · v4</span>
+    </div>
+    """, unsafe_allow_html=True)
+
 
 if __name__ == "__main__":
     main()
