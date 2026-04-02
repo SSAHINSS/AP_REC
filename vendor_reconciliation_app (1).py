@@ -568,12 +568,27 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
             gl_l = ov.get("gl_locs", [])
             label = fn.replace(".pdf","").replace(".xlsx","")
             log(f"Processing (matched): {fn}")
-            txt = _pdf(fp)
-            rows = parse_generic(txt)
-            if not rows and not txt.strip():
-                log(f"    SCANNED PDF — no text extracted"); skipped.append(fn); continue
+            if fn.endswith(".xlsx"):
+                # Try to extract invoice rows from Excel generically
+                rows = []
+                try:
+                    import openpyxl as _oxl
+                    _wb2 = _oxl.load_workbook(fp, data_only=True)
+                    for _ws2 in _wb2.worksheets:
+                        for _row in _ws2.iter_rows(values_only=True):
+                            _vals = [str(v).strip() if v is not None else "" for v in _row]
+                            _line = " ".join(_vals)
+                            _parsed = parse_generic(_line)
+                            rows.extend(_parsed)
+                except Exception as _xe:
+                    log(f"    Excel read error: {_xe}")
+            else:
+                txt = _pdf(fp)
+                rows = parse_generic(txt)
+                if not rows and not txt.strip():
+                    log(f"    SCANNED PDF — no text extracted"); skipped.append(fn); continue
             if not rows:
-                log(f"    No invoices parsed ({len(txt)} chars)"); skipped.append(fn); continue
+                log(f"    No invoices found in {fn}"); skipped.append(fn); continue
             do(label, rows, gv, gl_l, fn)
             continue
 
@@ -1023,8 +1038,12 @@ def main():
                     if sel_vendor != "— select —":
                         chosen_vendor = sel_vendor
                         st.markdown(
+                            f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;'
+                            f'color:#CCFF00;margin-top:4px;font-weight:600;">'
+                            f'✓ MATCHED → {sel_vendor}</div>'
                             f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;'
-                            f'color:#2DD4BF;margin-top:2px;">→ using generic parser</div>',
+                            f'color:#6B7A8D;margin-top:2px;">generic parser will be used · '
+                            f'verify results in report</div>',
                             unsafe_allow_html=True)
                 elif vk_ok:
                     st.markdown(
@@ -1120,36 +1139,31 @@ def main():
         if result_bytes:
             gap(16)
 
-            # ── Per-file status ───────────────────────────────────────
+            # ── Skipped files (neon pink) ─────────────────────────────
             all_files = [su.name for su in stmt_uploads]
-            rows_html = ""
-            for fname in all_files:
-                if fname in reconciled:
-                    rows_html += (
-                        f'<div style="padding:2px 0; font-size:12px; color:#CCFF00;">'
-                        f'✓&nbsp;&nbsp;{fname}</div>')
-                elif fname in skipped:
-                    rows_html += (
-                        f'<div style="padding:2px 0; font-size:12px; color:#FF69B4;">'
-                        f'✕&nbsp;&nbsp;{fname}&nbsp;&nbsp;'
-                        f'<span style="color:#3A4255; font-size:11px;">skipped</span></div>')
-                else:
-                    rows_html += (
-                        f'<div style="padding:2px 0; font-size:12px; color:#CCFF00;">'
-                        f'✓&nbsp;&nbsp;{fname}</div>')
+            total     = len(all_files)
+            n_rec     = len(reconciled)
+            n_skip    = len(skipped)
 
-            st.markdown(f"""
-            <div style="background:#22262D; border:1px solid #252C3A; border-radius:3px;
-                        padding:14px 16px; font-family:'JetBrains Mono',monospace;
-                        line-height:1.8; margin-bottom:12px;">
-                {rows_html}
-            </div>""", unsafe_allow_html=True)
+            if skipped:
+                skip_rows = "".join(
+                    f'<div style="padding:2px 0; font-size:12px; color:#FF00CC;">'
+                    f'✕&nbsp;&nbsp;{fname}&nbsp;&nbsp;'
+                    f'<span style="color:#6B3A5D; font-size:11px;">— not reconciled</span></div>'
+                    for fname in skipped
+                )
+                st.markdown(f"""
+                <div style="background:#22262D; border:1px solid #FF00CC44; border-radius:3px;
+                            padding:14px 16px; font-family:'JetBrains Mono',monospace;
+                            line-height:1.8; margin-bottom:12px;">
+                    <div style="font-size:10px; color:#FF00CC; letter-spacing:0.15em;
+                                text-transform:uppercase; margin-bottom:8px;">Skipped Files</div>
+                    {skip_rows}
+                </div>""", unsafe_allow_html=True)
 
-            # ── Final summary bar ─────────────────────────────────────
-            total = len(all_files)
-            n_rec = len(reconciled)
-            n_skip = len(skipped)
-            skip_txt = f"&nbsp;&nbsp;|&nbsp;&nbsp;<span style='color:#FF69B4;'>{n_skip} skipped</span>" if n_skip else ""
+            # ── Final summary line ────────────────────────────────────
+            skip_txt = (f"&nbsp;&nbsp;|&nbsp;&nbsp;"
+                        f"<span style='color:#FF00CC;'>{n_skip} skipped</span>") if n_skip else ""
             st.markdown(f"""
             <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600;
                         color:#CCFF00; padding:8px 0; letter-spacing:0.05em;">
