@@ -510,22 +510,20 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
     log(f"{len(stmts)} statement file(s) found")
 
     grps = {}
-    skipped = []
     for f in stmts:
         if f in (file_overrides or {}):
             grps.setdefault(("_OV_", f), []).append(f)
         else:
             l, v = fi(f)
             if l and v: grps.setdefault((l,v),[]).append(f)
-            else:
-                log(f"  SKIP (unrecognised name): {f}")
-                skipped.append(f)
+            else: log(f"  SKIP (unrecognised name): {f}")
     sel = {}
     for k, fl in grps.items():
         fl.sort(reverse=True); sel[k] = fl[0]
         if len(fl) > 1:
             log(f"  Multiple files for {k[0]} {k[1]}: using {fl[0]}")
 
+    all_stmt_set = set(stmts)   # every file that entered the system
     sheets = {}; srows = []; reconciled = set()
 
     def do(sn, raw, gv, gl_l, src):
@@ -568,8 +566,8 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
             gl_l = ov.get("gl_locs", [])
             label = fn.replace(".pdf","").replace(".xlsx","")
             log(f"Processing (matched): {fn}")
+            log(f"  vendor → {gv or '(none)'} | locs → {gl_l or '(none)'}")
             if fn.endswith(".xlsx"):
-                # Try to extract invoice rows from Excel generically
                 rows = []
                 try:
                     import openpyxl as _oxl
@@ -580,15 +578,19 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
                             _line = " ".join(_vals)
                             _parsed = parse_generic(_line)
                             rows.extend(_parsed)
+                    log(f"  Excel: found {len(rows)} invoice rows")
                 except Exception as _xe:
-                    log(f"    Excel read error: {_xe}")
+                    log(f"  Excel read error: {_xe}")
             else:
                 txt = _pdf(fp)
                 rows = parse_generic(txt)
+                log(f"  PDF: found {len(rows)} invoice rows")
                 if not rows and not txt.strip():
-                    log(f"    SCANNED PDF — no text extracted"); skipped.append(fn); continue
+                    log(f"  SCANNED PDF — no text extracted")
             if not rows:
-                log(f"    No invoices found in {fn}"); skipped.append(fn); continue
+                log(f"  ✕ no invoices found — needs a dedicated parser (contact admin)")
+                reconciled.add(fn)   # count as processed, will show in report as empty
+                continue
             do(label, rows, gv, gl_l, fn)
             continue
 
@@ -607,21 +609,24 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
                 "The Library St Pete":(["LIB-96100"],"LIB Us Paper"),
                 "The Stovall House":(["SH-93001","SH-93002"],"SH Us Paper"),
             }
+            found_sub = False
             for c, ir in us.items():
                 if c in usm and ir:
-                    l2,sn2 = usm[c]; log(f"  Sub: {c}"); do(sn2,ir,"US PAPER CORP",l2,fn)
+                    l2,sn2 = usm[c]; log(f"  Sub: {c}"); do(sn2,ir,"US PAPER CORP",l2,fn); found_sub=True
+            if not found_sub: reconciled.add(fn)  # count US PAPER even if no subs matched
             continue
         if fn.endswith(".xlsx") and "AMAZON" in fn.upper():
             r = parse_amazon_xl(fp)
             if r: do(label, r, gv, gl_l, fn)
+            else: reconciled.add(fn)
             continue
         txt = _pdf(fp); parser = PARSERS.get(vk, parse_generic)
         if parser is None: parser = parse_generic
         rows = parser(txt)
         if not rows and not txt.strip():
-            log(f"    SCANNED PDF — no text extracted"); skipped.append(fn); continue
+            log(f"    SCANNED PDF — no text extracted"); reconciled.add(fn); continue
         if not rows:
-            log(f"    No invoices parsed ({len(txt)} chars)"); skipped.append(fn); continue
+            log(f"    No invoices parsed ({len(txt)} chars)"); reconciled.add(fn); continue
         do(label, rows, gv, gl_l, fn)
 
     if not srows:
@@ -655,6 +660,7 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
     tm=sdf["Matched"].sum(); tv=sdf["Amt Variance"].sum(); tmi=sdf["Missing in GL"].sum()
     log(f"Done! {len(sheets)+1} sheets — {tm} matched | {tv} variances | {tmi} missing in GL")
 
+    skipped = sorted(all_stmt_set - reconciled)   # guaranteed: reconciled + skipped = total
     return out_buf.getvalue(), output_filename, reconciled, skipped
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -1141,10 +1147,10 @@ def main():
 
             # ── Skipped files (neon pink) ─────────────────────────────
             all_files = [su.name for su in stmt_uploads]
-            total     = len(all_files)
-            n_rec     = len(reconciled)
-            n_skip    = len(set(skipped))
-            skipped   = list(dict.fromkeys(skipped))  # deduplicate preserving order
+            total  = len([su for su in stmt_uploads
+                          if not su.name.upper().startswith("AP_REC")])
+            n_rec  = len(reconciled)
+            n_skip = len(skipped)
 
             if skipped:
                 skip_rows = "".join(
