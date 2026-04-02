@@ -33,6 +33,12 @@ VM = {
     "AMAZON":"Amazon Capital Services","FRANK GAY":"FRANK GAY SERVICES LLC",
     "PENGUIN":"Penguin Random House LLC","GFS":"Gordon Food Service",
     "COF BAR":"Gordon Food Service",
+    "ZWIESEL FORTESSA":"Zwiesel Fortessa Americas LLC",
+    "FORTESSA":"Zwiesel Fortessa Americas LLC",
+    "UNIFIRST":"UniFirst Corporation",
+    "CULIGAN":"Culligan Water","CULLIGAN":"Culligan Water",
+    "SAMUELS":"Samuels & Son Seafood",
+    "WRI":"Caspers Company",
 }
 
 # ── Styles ─────────────────────────────────────────────────────────────────
@@ -259,6 +265,42 @@ def parse_amazon_xl(fp):
         pass
     return R
 
+
+def parse_fortessa(t):
+    R = []
+    # Invoice # wraps to next line: date/amount on line 1, #INVxxxxxx on line 2
+    pat = re.compile(
+        r'(\d{2}/\d{2}/\d{4})\s+Invoice\s+.*?\$([\d,]+\.\d{2})\s+\d{2}/\d{2}/\d{4}.*?\n(#INV\d+)',
+        re.DOTALL)
+    for m in pat.finditer(t):
+        R.append({"Date":m[1],"Invoice":m[3],"Amount":float(m[2].replace(",","")),"Type":"Invoice"})
+    return R
+
+
+def parse_unifirst(t):
+    R = []
+    for m in re.finditer(r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+([\d,]+\.\d{2})', t):
+        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
+    return R
+
+def parse_culligan(t):
+    R = []
+    for m in re.finditer(r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+\d+\s+PO#\s+([\d,]+\.\d{2})', t):
+        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
+    return R
+
+def parse_samuels(t):
+    R = []
+    for m in re.finditer(r'(\d{2}/\d{2}/\d{2})\s+I\s+(\d+)\s+([\d,]+\.\d{2})\s', t):
+        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
+    return R
+
+def parse_wri(t):
+    R = []
+    for m in re.finditer(r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+\$([\d,]+\.\d{2})', t):
+        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
+    return R
+
 PARSERS = {
     "BUCCANEER":parse_buccaneer,"CKS BAR":parse_cks,"CKS":parse_cks,
     "ED DON":parse_edward_don,"ROMANOS COF BAR":parse_romanos,"ROMANOS":parse_romanos,
@@ -268,6 +310,11 @@ PARSERS = {
     "MR GREENS":parse_mr_greens,"BUSH BROS":parse_bush_bros,
     "US PAPER":parse_us_paper,"FRANK GAY":parse_frank_gay,
     "PENGUIN":parse_penguin,"GFS":parse_gfs,"COF BAR":parse_gfs,"AMAZON":None,
+    "ZWIESEL FORTESSA":parse_fortessa,"FORTESSA":parse_fortessa,
+    "UNIFIRST":parse_unifirst,
+    "CULIGAN":parse_culligan,"CULLIGAN":parse_culligan,
+    "SAMUELS":parse_samuels,
+    "WRI":parse_wri,
 }
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -782,17 +829,91 @@ def main():
         accept_multiple_files=True,
         key="stmt_files", label_visibility="collapsed"
     )
+    gap(8)
+
+    # ── 03b  Filename checker & rename ───────────────────────────────────
+    # Build a working name map: original filename → effective filename
+    # Users can rename unrecognised files inline without touching the real file.
+    name_overrides = {}   # original_name → corrected_name
+    has_bad = False
+
+    VALID_LOCS = ["SH19","SH","LIB","MD","OE","PRED","OCMGT"]
+
+    def _diagnose(fname):
+        """Return (loc_ok, vk_ok, hint) for a filename."""
+        n = fname.replace(".pdf","").replace(".xlsx","").upper()
+        loc = None
+        for p in VALID_LOCS:
+            if n.startswith(p + " "):
+                loc = p; break
+        if loc is None:
+            taken = n.split()[0] if n.split() else n
+            return False, False, f"unknown location prefix '{taken}' — expected one of: {', '.join(VALID_LOCS)}"
+        rem = n[len(loc):].strip()
+        vk = None
+        for k in sorted(VM, key=len, reverse=True):
+            if rem.startswith(k):
+                vk = k; break
+        if vk is None:
+            taken = rem.split()[0] if rem.split() else rem
+            known  = ", ".join(sorted(VM.keys()))
+            return True, False, f"unknown vendor '{taken}' — known vendors: {known}"
+        return True, True, ""
+
     if stmt_uploads:
-        files_html = "".join(
-            f'<div style="padding:1px 0;">✓&nbsp;&nbsp;{f.name}</div>'
-            for f in stmt_uploads
-        )
-        st.markdown(f"""
-        <div style="font-family:'JetBrains Mono',monospace; font-size:12px;
-                    color:#2DD4BF; margin-top:8px; line-height:1.85;">
-            {files_html}
-        </div>""", unsafe_allow_html=True)
-    gap(32)
+        any_bad = any(not _diagnose(f.name)[1] for f in stmt_uploads)
+
+        for f in stmt_uploads:
+            loc_ok, vk_ok, hint = _diagnose(f.name)
+            if loc_ok and vk_ok:
+                # Good file — show green tick
+                st.markdown(
+                    f'<div style="font-family:\'JetBrains Mono\',monospace; font-size:12px;'
+                    f' color:#2DD4BF; padding:2px 0;">✓&nbsp;&nbsp;{f.name}</div>',
+                    unsafe_allow_html=True)
+            else:
+                has_bad = True
+                ext = ".pdf" if f.name.endswith(".pdf") else ".xlsx"
+                # Warning row
+                st.markdown(
+                    f'<div style="font-family:\'JetBrains Mono\',monospace; font-size:11px;'
+                    f' color:#F87171; padding: 4px 0 2px 0;">✕&nbsp;&nbsp;{f.name}'
+                    f'<span style="color:#3A4255; margin-left:12px;">← {hint}</span></div>',
+                    unsafe_allow_html=True)
+                # Rename input
+                corrected = st.text_input(
+                    f"rename_{f.name}",
+                    value=f.name.replace(ext,""),
+                    label_visibility="collapsed",
+                    placeholder=f"e.g. OE VENDOR NAME{ext}",
+                    key=f"rename_{f.name}"
+                )
+                corrected_full = corrected.strip() + ext
+                name_overrides[f.name] = corrected_full
+                # Live re-check of corrected name
+                if corrected.strip():
+                    l2, v2, h2 = _diagnose(corrected_full)
+                    if l2 and v2:
+                        st.markdown(
+                            f'<div style="font-family:\'JetBrains Mono\',monospace; font-size:11px;'
+                            f' color:#2DD4BF; padding:1px 0 6px 0;">'
+                            f'✓&nbsp;&nbsp;looks good — will process as {corrected_full}</div>',
+                            unsafe_allow_html=True)
+                    else:
+                        st.markdown(
+                            f'<div style="font-family:\'JetBrains Mono\',monospace; font-size:11px;'
+                            f' color:#F87171; padding:1px 0 6px 0;">'
+                            f'✕&nbsp;&nbsp;still unrecognised: {h2}</div>',
+                            unsafe_allow_html=True)
+
+        if has_bad:
+            gap(4)
+            st.markdown(
+                '<div style="font-family:\'JetBrains Mono\',monospace; font-size:11px;'
+                ' color:#6B7A8D; padding:4px 0;">Files with unresolved names will be skipped.</div>',
+                unsafe_allow_html=True)
+
+    gap(28)
 
     # ── 04  Execute ──────────────────────────────────────────────────────
     section("04", "Execute")
@@ -813,7 +934,6 @@ def main():
 
         def log(msg):
             log_lines.append(msg)
-            indent = msg.startswith("  ")
             rows = "".join(
                 f'<div style="padding:1px 0;">'
                 f'<span style="color:#3A4255; user-select:none;">{"&nbsp;&nbsp;" if m.startswith("  ") else "&gt;"}</span>'
@@ -835,12 +955,16 @@ def main():
                 gl_path = os.path.join(tmpdir, gl_upload.name)
                 with open(gl_path, "wb") as f:
                     f.write(gl_upload.getvalue())
+
                 stmt_paths = []
                 for su in stmt_uploads:
-                    sp = os.path.join(tmpdir, su.name)
+                    # Use corrected name if user renamed it, otherwise original
+                    effective_name = name_overrides.get(su.name, su.name)
+                    sp = os.path.join(tmpdir, effective_name)
                     with open(sp, "wb") as f:
                         f.write(su.getvalue())
                     stmt_paths.append(sp)
+
                 result_bytes, result_fn = run_reconciliation(gl_path, stmt_paths, log_fn=log)
         except ValueError as e:
             st.markdown(f"""<div style="font-family:'JetBrains Mono',monospace; font-size:12px;
