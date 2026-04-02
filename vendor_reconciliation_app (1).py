@@ -526,12 +526,12 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
         if len(fl) > 1:
             log(f"  Multiple files for {k[0]} {k[1]}: using {fl[0]}")
 
-    sheets = {}; srows = []; reconciled = []
+    sheets = {}; srows = []; reconciled = set()
 
     def do(sn, raw, gv, gl_l, src):
         inv_rows = [r for r in raw if r["Type"] not in SKIP_TYPES]
         if not inv_rows:
-            log(f"    (all payments — skipped)"); return
+            log(f"    (all payments — skipped)"); reconciled.add(src); return
         lk = glk(gl, gv, gl_l); recon = []
         for it in inv_rows:
             inv = str(it["Invoice"]).strip(); sa = round(it["Amount"],2)
@@ -553,7 +553,7 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
                        "Matched":m,"Amt Variance":v,"Missing in GL":mig,
                        "Stmt Total":round(st,2),"GL Total":round(gt,2),
                        "Net Variance":round(st-gt,2)})
-        reconciled.append(src)
+        reconciled.add(src)
         log(f"    {len(df)} items: {m} matched, {v} variance, {mig} missing in GL")
 
     if file_overrides is None:
@@ -1051,8 +1051,8 @@ def main():
                         f'color:#2DD4BF;padding-top:6px;">✓ {VM.get(vk,"")}</div>',
                         unsafe_allow_html=True)
 
-            # Store override for this file
-            if chosen_locs or chosen_vendor:
+            # Only route through override path if user actually selected a vendor
+            if chosen_vendor:
                 file_overrides[f.name] = {
                     "gl_vendor": chosen_vendor,
                     "gl_locs":   chosen_locs,
@@ -1143,7 +1143,8 @@ def main():
             all_files = [su.name for su in stmt_uploads]
             total     = len(all_files)
             n_rec     = len(reconciled)
-            n_skip    = len(skipped)
+            n_skip    = len(set(skipped))
+            skipped   = list(dict.fromkeys(skipped))  # deduplicate preserving order
 
             if skipped:
                 skip_rows = "".join(
