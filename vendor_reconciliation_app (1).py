@@ -36,10 +36,10 @@ VM = {
     "COF BAR":"Gordon Food Service",
     "ZWIESEL FORTESSA":"Zwiesel Fortessa Americas LLC",
     "FORTESSA":"Zwiesel Fortessa Americas LLC",
-    "UNIFIRST":"UniFirst Corporation",
+    "UNIFIRST":"Unifirst Corporation",
     "CULIGAN":"Culligan Water","CULLIGAN":"Culligan Water",
-    "SAMUELS":"Samuels & Son Seafood",
-    "WRI":"Caspers Company",
+    "SAMUELS":"Samuels and Son Seafood South Coast LLC",
+    "WRI":"Caspers Service Company LLC",
     "COZZINI":"Cozzini Bros. Inc",
 }
 
@@ -275,7 +275,7 @@ def parse_fortessa(t):
         r'(\d{2}/\d{2}/\d{4})\s+Invoice\s+.*?\$([\d,]+\.\d{2})\s+\d{2}/\d{2}/\d{4}.*?\n(#INV\d+)',
         re.DOTALL)
     for m in pat.finditer(t):
-        R.append({"Date":m[1],"Invoice":m[3],"Amount":float(m[2].replace(",","")),"Type":"Invoice"})
+        R.append({"Date":m[1],"Invoice":m[3].lstrip("#"),"Amount":float(m[2].replace(",","")),"Type":"Invoice"})
     return R
 
 
@@ -481,6 +481,64 @@ def fmt_summary(ws, nr, nc):
 #  CORE RECONCILIATION (refactored to accept paths, not use globals)
 # ══════════════════════════════════════════════════════════════════════════
 
+def smart_invoice_match(raw_rows, gl, log_fn=None):
+    """
+    Reverse-engineer vendor + location by looking up invoice numbers directly
+    in the GL — no reliance on the filename. Groups results by GL vendor/location.
+    Returns list of {label, rows, vendor, loc_id} dicts, or [] if nothing found.
+    """
+    def log(m):
+        if log_fn: log_fn(m)
+
+    inv_rows = [r for r in raw_rows if r.get("Type","") not in SKIP_TYPES]
+    if not inv_rows:
+        return []
+
+    # Build every normalised variant of each invoice number
+    variants = {}   # variant_str → original invoice string
+    for r in inv_rows:
+        raw = str(r["Invoice"]).strip()
+        for v in [raw, raw.lstrip("0"),
+                  raw.zfill(10) if raw.isdigit() and len(raw) < 10 else None]:
+            if v:
+                variants[v] = raw
+
+    # Single GL lookup (no vendor/location filter)
+    gl_hit = gl[gl["Document number"].isin(variants.keys())].copy()
+
+    if gl_hit.empty:
+        log("  smart-match: no invoice numbers found in GL")
+        return []
+
+    log(f"  smart-match: {len(gl_hit)} GL entries matched from {len(inv_rows)} invoices")
+
+    # Build reverse map: gl doc# → original invoice string
+    inv_by_variant = {}
+    for variant, orig in variants.items():
+        inv_by_variant[variant] = orig
+
+    # Group GL hits by vendor + location
+    results = []
+    for (vendor, loc_id), grp in gl_hit.groupby(["Vendor name","Location ID"]):
+        gl_docs = set(grp["Document number"].tolist())
+        # Find the original rows that matched this GL group
+        sub = [r for r in inv_rows
+               if any(v in gl_docs for v in [
+                   str(r["Invoice"]).strip(),
+                   str(r["Invoice"]).strip().lstrip("0"),
+                   str(r["Invoice"]).strip().zfill(10)
+                   if str(r["Invoice"]).strip().isdigit()
+                   and len(str(r["Invoice"]).strip()) < 10 else None
+               ] if v)]
+        if sub:
+            label = f"{loc_id} {vendor.split()[0]}"[:31]
+            log(f"    → {vendor} / {loc_id}: {len(sub)} invoices")
+            results.append({"label": label, "rows": sub,
+                             "vendor": vendor, "loc_id": loc_id})
+
+    return results
+
+
 def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
     """
     gl_path   : path to the GL CSV file
@@ -589,9 +647,18 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
                     log(f"  SCANNED PDF — no text extracted")
             if not rows:
                 log(f"  ✕ no invoices found — needs a dedicated parser (contact admin)")
-                reconciled.add(fn)   # count as processed, will show in report as empty
+                reconciled.add(fn)
                 continue
-            do(label, rows, gv, gl_l, fn)
+            # Smart match: use invoice numbers to find true vendor+location in GL
+            smart = smart_invoice_match(rows, gl, log)
+            if smart:
+                for sg in smart:
+                    do(sg["label"], sg["rows"], sg["vendor"], [sg["loc_id"]], fn)
+            elif gv:
+                do(label, rows, gv, gl_l, fn)
+            else:
+                log(f"  ✕ no GL match found — all invoices will show as missing")
+                do(label, rows, gv, gl_l, fn)
             continue
 
         gv   = ov.get("gl_vendor") or VM.get(vk, vk)
@@ -627,6 +694,16 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
             log(f"    SCANNED PDF — no text extracted"); reconciled.add(fn); continue
         if not rows:
             log(f"    No invoices parsed ({len(txt)} chars)"); reconciled.add(fn); continue
+        # Smart match: if GL lookup by filename-derived vendor/location returns empty,
+        # reverse-engineer from invoice numbers directly
+        lk_preview = glk(gl, gv, gl_l)
+        if not lk_preview:
+            log(f"    No GL entries for {vk} at {loc} — trying smart invoice match")
+            smart = smart_invoice_match(rows, gl, log)
+            if smart:
+                for sg in smart:
+                    do(sg["label"], sg["rows"], sg["vendor"], [sg["loc_id"]], fn)
+                continue
         do(label, rows, gv, gl_l, fn)
 
     if not srows:
