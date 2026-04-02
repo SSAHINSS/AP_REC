@@ -591,30 +591,22 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
     )
     log(f"{len(stmts)} statement file(s) found")
 
-    grps = {}
-    for f in stmts:
-        if f in (file_overrides or {}):
-            grps.setdefault(("_OV_", f), []).append(f)
-        else:
-            l, v = fi(f)
-            if l and v:
-                grps.setdefault((l,v),[]).append(f)
-            else:
-                log(f"  Unrecognised filename: {f} — will attempt smart match")
-                grps.setdefault(("_SMART_", f), []).append(f)
-    sel = {}
-    for k, fl in grps.items():
-        fl.sort(reverse=True); sel[k] = fl[0]
-        if len(fl) > 1:
-            log(f"  Multiple files for {k[0]} {k[1]}: using {fl[0]}")
-
-    all_stmt_set = set(stmts)   # every file that entered the system
+    all_stmt_set = set(stmts)
     sheets = {}; srows = []; reconciled = set()
 
+    if file_overrides is None:
+        file_overrides = {}
+
     def do(sn, raw, gv, gl_l, src):
+        """Reconcile rows against GL, deduplicate sheet names automatically."""
         inv_rows = [r for r in raw if r["Type"] not in SKIP_TYPES]
         if not inv_rows:
             log(f"    (all payments — skipped)"); reconciled.add(src); return
+        # Deduplicate sheet name if already used
+        base_sn = sn[:31]; sn2 = base_sn; n = 1
+        while sn2 in sheets:
+            sn2 = f"{base_sn[:28]} {n:02d}"; n += 1
+        sn = sn2
         lk = glk(gl, gv, gl_l); recon = []
         for it in inv_rows:
             inv = str(it["Invoice"]).strip(); sa = round(it["Amount"],2)
@@ -639,79 +631,25 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
         reconciled.add(src)
         log(f"    {len(df)} items: {m} matched, {v} variance, {mig} missing in GL")
 
-    if file_overrides is None:
-        file_overrides = {}
+    def process_rows(fn, fp, rows, fallback_label, fallback_vendor, fallback_locs):
+        """Smart match first. If nothing found, fall back to filename-derived info."""
+        smart = smart_invoice_match(rows, gl, log)
+        if smart:
+            for sg in smart:
+                do(sg["label"], sg["rows"], sg["vendor"], [sg["loc_id"]], fn)
+        else:
+            log(f"    Smart match found nothing — using filename fallback")
+            do(fallback_label, rows, fallback_vendor, fallback_locs, fn)
 
-    for (loc, vk), fn in sorted(sel.items()):
-        fp = stmt_map[fn]
-        ov = file_overrides.get(fn, {})
-
-        if loc == "_SMART_":
-            log(f"Smart-matching: {fn}")
-            txt = _pdf(fp)
-            if not txt.strip():
-                log(f"  No text extracted (scanned + OCR failed)"); continue
-            # Try Wright's parser first (most common scanned format), then generic
-            rows = parse_wrights(txt) or parse_generic(txt)
-            if not rows:
-                log(f"  No invoice rows found"); continue
-            smart = smart_invoice_match(rows, gl, log)
-            if smart:
-                for sg in smart:
-                    do(sg["label"], sg["rows"], sg["vendor"], [sg["loc_id"]], fn)
-            else:
-                log(f"  Invoice numbers not found in GL — filing as unmatched")
-                do(fn[:31], rows, "", [], fn)
-            continue
-
-        if loc == "_OV_":
-            gv   = ov.get("gl_vendor", "")
-            gl_l = ov.get("gl_locs", [])
-            label = fn.replace(".pdf","").replace(".xlsx","")
-            log(f"Processing (matched): {fn}")
-            log(f"  vendor → {gv or '(none)'} | locs → {gl_l or '(none)'}")
-            if fn.endswith(".xlsx"):
-                rows = []
-                try:
-                    import openpyxl as _oxl
-                    _wb2 = _oxl.load_workbook(fp, data_only=True)
-                    for _ws2 in _wb2.worksheets:
-                        for _row in _ws2.iter_rows(values_only=True):
-                            _vals = [str(v).strip() if v is not None else "" for v in _row]
-                            _line = " ".join(_vals)
-                            _parsed = parse_generic(_line)
-                            rows.extend(_parsed)
-                    log(f"  Excel: found {len(rows)} invoice rows")
-                except Exception as _xe:
-                    log(f"  Excel read error: {_xe}")
-            else:
-                txt = _pdf(fp)
-                rows = parse_generic(txt)
-                log(f"  PDF: found {len(rows)} invoice rows")
-                if not rows and not txt.strip():
-                    log(f"  SCANNED PDF — no text extracted")
-            if not rows:
-                log(f"  ✕ no invoices found — needs a dedicated parser (contact admin)")
-                reconciled.add(fn)
-                continue
-            # Smart match: use invoice numbers to find true vendor+location in GL
-            smart = smart_invoice_match(rows, gl, log)
-            if smart:
-                for sg in smart:
-                    do(sg["label"], sg["rows"], sg["vendor"], [sg["loc_id"]], fn)
-            elif gv:
-                do(label, rows, gv, gl_l, fn)
-            else:
-                log(f"  ✕ no GL match found — all invoices will show as missing")
-                do(label, rows, gv, gl_l, fn)
-            continue
-
-        gv   = ov.get("gl_vendor") or VM.get(vk, vk)
-        gl_l = ov.get("gl_locs")  or LOC.get(loc, [])
-        label = f"{loc} {vk.title()}"
+    # ── Process every file independently — no deduplication ──────────────
+    for fn in sorted(stmts):
+        fp   = stmt_map[fn]
+        ov   = file_overrides.get(fn, {})
+        l, v = fi(fn)
         log(f"Processing: {fn}")
 
-        if vk == "US PAPER":
+        # ── US PAPER special case ────────────────────────────────────────
+        if v == "US PAPER":
             txt = _pdf(fp); us = parse_us_paper(txt)
             usm = {
                 "MAD DOGS AND ENGLISHMEN":(["MAD-80041"],"MD Us Paper"),
@@ -725,31 +663,42 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
             for c, ir in us.items():
                 if c in usm and ir:
                     l2,sn2 = usm[c]; log(f"  Sub: {c}"); do(sn2,ir,"US PAPER CORP",l2,fn); found_sub=True
-            if not found_sub: reconciled.add(fn)  # count US PAPER even if no subs matched
+            if not found_sub: reconciled.add(fn)
             continue
+
+        # ── Amazon XLSX ──────────────────────────────────────────────────
         if fn.endswith(".xlsx") and "AMAZON" in fn.upper():
             r = parse_amazon_xl(fp)
-            if r: do(label, r, gv, gl_l, fn)
+            gv   = ov.get("gl_vendor") or VM.get(v,"Amazon Capital Services")
+            gl_l = ov.get("gl_locs")   or LOC.get(l, [])
+            if r: do(f"{l or ''} Amazon".strip(), r, gv, gl_l, fn)
             else: reconciled.add(fn)
             continue
-        txt = _pdf(fp); parser = PARSERS.get(vk, parse_generic)
-        if parser is None: parser = parse_generic
-        rows = parser(txt)
-        if not rows and not txt.strip():
-            log(f"    SCANNED PDF — no text extracted"); reconciled.add(fn); continue
+
+        # ── All other files: extract rows then smart-match ───────────────
+        txt = _pdf(fp)
+
+        # Try vendor-specific parser first, then Wright's, then generic
+        parser = PARSERS.get(v) if v else None
+        rows = None
+        if parser:
+            rows = parser(txt)
         if not rows:
-            log(f"    No invoices parsed ({len(txt)} chars)"); reconciled.add(fn); continue
-        # Smart match: if GL lookup by filename-derived vendor/location returns empty,
-        # reverse-engineer from invoice numbers directly
-        lk_preview = glk(gl, gv, gl_l)
-        if not lk_preview:
-            log(f"    No GL entries for {vk} at {loc} — trying smart invoice match")
-            smart = smart_invoice_match(rows, gl, log)
-            if smart:
-                for sg in smart:
-                    do(sg["label"], sg["rows"], sg["vendor"], [sg["loc_id"]], fn)
-                continue
-        do(label, rows, gv, gl_l, fn)
+            rows = parse_wrights(txt)
+        if not rows:
+            rows = parse_generic(txt)
+
+        if not rows and not txt.strip():
+            log(f"  No text extracted"); reconciled.add(fn); continue
+        if not rows:
+            log(f"  No invoices found ({len(txt)} chars)"); reconciled.add(fn); continue
+
+        # Filename-derived fallback info (used only if smart match finds nothing)
+        fb_vendor = ov.get("gl_vendor") or (VM.get(v) if v else "") or ""
+        fb_locs   = ov.get("gl_locs")   or (LOC.get(l,[]) if l else [])
+        fb_label  = f"{l} {v.title()}" if l and v else fn.replace(".pdf","").replace(".xlsx","")[:31]
+
+        process_rows(fn, fp, rows, fb_label, fb_vendor, fb_locs)
 
     if not srows:
         raise ValueError("No vendor statements were successfully processed. "
