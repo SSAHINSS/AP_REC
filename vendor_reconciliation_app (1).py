@@ -18,6 +18,7 @@ LOC = {
     "OE":["OE","OE-96001","OE-96003","OE-96004","OE-96005","OE-96008","OE-96011"],
     "PRED":["PRED","PRED-82000"],
     "OCMGT":["OCMGT","OCMGT-71000","OCMGT-71001"],
+    "JTS":["JTS-01636","JTS-98001","JTS-98009","JTS-98011","JTS-98012","JTS-98014"],
 }
 VM = {
     "BUCCANEER":"Buccaneer Linen Service",
@@ -39,6 +40,7 @@ VM = {
     "CULIGAN":"Culligan Water","CULLIGAN":"Culligan Water",
     "SAMUELS":"Samuels & Son Seafood",
     "WRI":"Caspers Company",
+    "COZZINI":"Cozzini Bros. Inc",
 }
 
 # ── Styles ─────────────────────────────────────────────────────────────────
@@ -301,6 +303,51 @@ def parse_wri(t):
         R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
     return R
 
+
+def parse_cozzini(t):
+    R = []
+    for m in re.finditer(r'(\d{1,2}/\d{1,2}/\d{4})\s+Invoice\s+#(C\d+)\s+([\d,]+\.\d{2})', t):
+        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
+    return R
+
+
+from difflib import SequenceMatcher
+
+def _fuzzy_rank(query, candidates, n=12):
+    """Rank GL vendor names by similarity to the filename vendor key."""
+    q = query.upper().replace("_"," ")
+    scored = []
+    for c in candidates:
+        cu = c.upper()
+        ratio = SequenceMatcher(None, q, cu).ratio()
+        # Boost if any word from the query appears in the candidate
+        if any(w in cu for w in q.split() if len(w) > 2):
+            ratio += 0.25
+        scored.append((ratio, c))
+    scored.sort(reverse=True)
+    return [c for _, c in scored[:n]]
+
+def parse_generic(t):
+    """Fallback parser for new/unknown vendors — covers common tabular formats."""
+    R = []; seen = set()
+    patterns = [
+        r"(\d{1,2}/\d{1,2}/\d{4})\s+Invoice\s+#?(\w+)\s+\$?([\d,]+\.\d{2})(?:\s|$)",
+        r"(\d{1,2}/\d{1,2}/\d{2,4})\s+(\d{6,})\s+([\d,]+\.\d{2})(?:\s|$)",
+        r"(\d{1,2}/\d{1,2}/\d{2,4})\s+INV\s*#?(\w+)\s+\$?([\d,]+\.\d{2})",
+        r"(\d{4}-\d{2}-\d{2})\s+(\w+)\s+\$?([\d,]+\.\d{2})(?:\s|$)",
+    ]
+    for pat in patterns:
+        for m in re.finditer(pat, t, re.IGNORECASE):
+            key = m[2]
+            if key in seen: continue
+            try:
+                amt = float(m[3].replace(",",""))
+                if 0 < amt < 1_000_000:
+                    seen.add(key)
+                    R.append({"Date":m[1],"Invoice":key,"Amount":amt,"Type":"Invoice (Auto)"})
+            except: pass
+    return R
+
 PARSERS = {
     "BUCCANEER":parse_buccaneer,"CKS BAR":parse_cks,"CKS":parse_cks,
     "ED DON":parse_edward_don,"ROMANOS COF BAR":parse_romanos,"ROMANOS":parse_romanos,
@@ -315,6 +362,7 @@ PARSERS = {
     "CULIGAN":parse_culligan,"CULLIGAN":parse_culligan,
     "SAMUELS":parse_samuels,
     "WRI":parse_wri,
+    "COZZINI":parse_cozzini,
 }
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -433,7 +481,7 @@ def fmt_summary(ws, nr, nc):
 #  CORE RECONCILIATION (refactored to accept paths, not use globals)
 # ══════════════════════════════════════════════════════════════════════════
 
-def run_reconciliation(gl_path, stmt_paths, log_fn=None):
+def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
     """
     gl_path   : path to the GL CSV file
     stmt_paths: list of paths to vendor statement files (PDF / XLSX)
@@ -501,9 +549,15 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None):
                        "Net Variance":round(st-gt,2)})
         log(f"    {len(df)} items: {m} matched, {v} variance, {mig} missing in GL")
 
+    if file_overrides is None:
+        file_overrides = {}
+
     for (loc,vk), fn in sorted(sel.items()):
         fp = stmt_map[fn]
-        gv = VM[vk]; gl_l = LOC.get(loc,[])
+        # Check for dynamic overrides set by the user in the UI
+        ov = file_overrides.get(fn, {})
+        gv  = ov.get("gl_vendor") or VM.get(vk, vk)
+        gl_l = ov.get("gl_locs")  or LOC.get(loc, [])
         label = f"{loc} {vk.title()}"
         log(f"Processing: {fn}")
 
@@ -525,8 +579,8 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None):
             r = parse_amazon_xl(fp)
             if r: do(label, r, gv, gl_l, fn)
             continue
-        txt = _pdf(fp); parser = PARSERS.get(vk)
-        if parser is None: log(f"    No parser for {vk}"); continue
+        txt = _pdf(fp); parser = PARSERS.get(vk, parse_generic)
+        if parser is None: parser = parse_generic
         rows = parser(txt)
         if not rows and not txt.strip(): log(f"    SCANNED PDF — no text extracted"); continue
         if not rows: log(f"    No invoices parsed ({len(txt)} chars)"); continue
@@ -831,16 +885,32 @@ def main():
     )
     gap(8)
 
-    # ── 03b  Filename checker & rename ───────────────────────────────────
-    # Build a working name map: original filename → effective filename
-    # Users can rename unrecognised files inline without touching the real file.
-    name_overrides = {}   # original_name → corrected_name
+    # ── 03b  Filename checker with smart GL-powered dropdowns ────────────
+    VALID_LOCS = ["SH19","SH","LIB","MD","OE","PRED","OCMGT","JTS"]
+    file_overrides = {}   # fname → {"gl_vendor": str, "gl_locs": list}
     has_bad = False
 
-    VALID_LOCS = ["SH19","SH","LIB","MD","OE","PRED","OCMGT"]
+    # Parse GL now if available so we can populate dropdowns
+    gl_vendors  = []   # all unique vendor names in GL
+    gl_loc_ids  = []   # all unique location IDs in GL
+    gl_loc_groups = {} # prefix → list of full IDs, e.g. "JTS" → ["JTS-98001",...]
+    if gl_upload:
+        try:
+            import pandas as _pd, io as _io
+            _gdf = _pd.read_csv(_io.BytesIO(gl_upload.getvalue()))
+            gl_vendors  = sorted(_gdf["Vendor name"].dropna().unique().tolist())
+            gl_loc_ids  = sorted(_gdf["Location ID"].dropna().unique().tolist())
+            # Group location IDs by their prefix (everything before the first '-')
+            for lid in gl_loc_ids:
+                pfx = lid.split("-")[0]
+                gl_loc_groups.setdefault(pfx, [])
+                if lid not in gl_loc_groups[pfx]:
+                    gl_loc_groups[pfx].append(lid)
+        except Exception:
+            pass
 
     def _diagnose(fname):
-        """Return (loc_ok, vk_ok, hint) for a filename."""
+        """Return (loc, vk, loc_ok, vk_ok) for a filename."""
         n = fname.replace(".pdf","").replace(".xlsx","").upper()
         loc = None
         for p in VALID_LOCS:
@@ -848,7 +918,7 @@ def main():
                 loc = p; break
         if loc is None:
             taken = n.split()[0] if n.split() else n
-            return False, False, f"unknown location prefix '{taken}' — expected one of: {', '.join(VALID_LOCS)}"
+            return taken, None, False, False
         rem = n[len(loc):].strip()
         vk = None
         for k in sorted(VM, key=len, reverse=True):
@@ -856,61 +926,109 @@ def main():
                 vk = k; break
         if vk is None:
             taken = rem.split()[0] if rem.split() else rem
-            known  = ", ".join(sorted(VM.keys()))
-            return True, False, f"unknown vendor '{taken}' — known vendors: {known}"
-        return True, True, ""
+            return loc, taken, True, False
+        return loc, vk, True, True
 
     if stmt_uploads:
-        any_bad = any(not _diagnose(f.name)[1] for f in stmt_uploads)
-
         for f in stmt_uploads:
-            loc_ok, vk_ok, hint = _diagnose(f.name)
+            loc, vk, loc_ok, vk_ok = _diagnose(f.name)
+
             if loc_ok and vk_ok:
-                # Good file — show green tick
                 st.markdown(
                     f'<div style="font-family:\'JetBrains Mono\',monospace; font-size:12px;'
                     f' color:#2DD4BF; padding:2px 0;">✓&nbsp;&nbsp;{f.name}</div>',
                     unsafe_allow_html=True)
-            else:
-                has_bad = True
-                ext = ".pdf" if f.name.endswith(".pdf") else ".xlsx"
-                # Warning row
-                st.markdown(
-                    f'<div style="font-family:\'JetBrains Mono\',monospace; font-size:11px;'
-                    f' color:#F87171; padding: 4px 0 2px 0;">✕&nbsp;&nbsp;{f.name}'
-                    f'<span style="color:#3A4255; margin-left:12px;">← {hint}</span></div>',
-                    unsafe_allow_html=True)
-                # Rename input
-                corrected = st.text_input(
-                    f"rename_{f.name}",
-                    value=f.name.replace(ext,""),
-                    label_visibility="collapsed",
-                    placeholder=f"e.g. OE VENDOR NAME{ext}",
-                    key=f"rename_{f.name}"
-                )
-                corrected_full = corrected.strip() + ext
-                name_overrides[f.name] = corrected_full
-                # Live re-check of corrected name
-                if corrected.strip():
-                    l2, v2, h2 = _diagnose(corrected_full)
-                    if l2 and v2:
-                        st.markdown(
-                            f'<div style="font-family:\'JetBrains Mono\',monospace; font-size:11px;'
-                            f' color:#2DD4BF; padding:1px 0 6px 0;">'
-                            f'✓&nbsp;&nbsp;looks good — will process as {corrected_full}</div>',
-                            unsafe_allow_html=True)
-                    else:
-                        st.markdown(
-                            f'<div style="font-family:\'JetBrains Mono\',monospace; font-size:11px;'
-                            f' color:#F87171; padding:1px 0 6px 0;">'
-                            f'✕&nbsp;&nbsp;still unrecognised: {h2}</div>',
-                            unsafe_allow_html=True)
+                continue
 
-        if has_bad:
+            # ── Problem file ─────────────────────────────────────────
+            has_bad = True
+            what = []
+            if not loc_ok: what.append(f"unknown location '{loc}'")
+            if not vk_ok:  what.append(f"unknown vendor '{vk}'")
+            st.markdown(
+                f'<div style="font-family:\'JetBrains Mono\',monospace; font-size:11px;'
+                f' color:#F87171; padding:6px 0 4px 0;">✕&nbsp;&nbsp;<b>{f.name}</b>'
+                f'&nbsp;&nbsp;<span style="color:#3A4255;">← {" · ".join(what)}</span></div>',
+                unsafe_allow_html=True)
+
+            col_loc, col_vend = st.columns(2)
+            chosen_locs   = LOC.get(loc, []) if loc_ok else []
+            chosen_vendor = VM.get(vk, "")   if vk_ok  else ""
+
+            # ── Location dropdown ────────────────────────────────────
+            with col_loc:
+                st.markdown(
+                    '<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;'
+                    'color:#6B7A8D;letter-spacing:0.1em;text-transform:uppercase;'
+                    'margin-bottom:4px;">Location</div>',
+                    unsafe_allow_html=True)
+                if not loc_ok and gl_loc_groups:
+                    # Fuzzy-rank location prefixes against the unknown token
+                    ranked_pfx = _fuzzy_rank(loc, list(gl_loc_groups.keys()), n=20)
+                    loc_options = ["— select —"] + ranked_pfx
+                    sel_pfx = st.selectbox(
+                        f"loc_{f.name}", loc_options,
+                        label_visibility="collapsed",
+                        key=f"loc_{f.name}"
+                    )
+                    if sel_pfx != "— select —":
+                        chosen_locs = gl_loc_groups.get(sel_pfx, [])
+                        st.markdown(
+                            f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;'
+                            f'color:#2DD4BF;margin-top:2px;">→ {", ".join(chosen_locs)}</div>',
+                            unsafe_allow_html=True)
+                elif loc_ok:
+                    st.markdown(
+                        f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;'
+                        f'color:#2DD4BF;padding-top:6px;">✓ {loc}</div>',
+                        unsafe_allow_html=True)
+
+            # ── Vendor dropdown ──────────────────────────────────────
+            with col_vend:
+                st.markdown(
+                    '<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;'
+                    'color:#6B7A8D;letter-spacing:0.1em;text-transform:uppercase;'
+                    'margin-bottom:4px;">GL Vendor Name</div>',
+                    unsafe_allow_html=True)
+                if not vk_ok and gl_vendors:
+                    ranked_vendors = _fuzzy_rank(vk or "", gl_vendors, n=12)
+                    vend_options   = ["— select —"] + ranked_vendors
+                    sel_vendor = st.selectbox(
+                        f"vend_{f.name}", vend_options,
+                        label_visibility="collapsed",
+                        key=f"vend_{f.name}"
+                    )
+                    if sel_vendor != "— select —":
+                        chosen_vendor = sel_vendor
+                        st.markdown(
+                            f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;'
+                            f'color:#2DD4BF;margin-top:2px;">→ using generic parser</div>',
+                            unsafe_allow_html=True)
+                elif vk_ok:
+                    st.markdown(
+                        f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;'
+                        f'color:#2DD4BF;padding-top:6px;">✓ {VM.get(vk,"")}</div>',
+                        unsafe_allow_html=True)
+
+            # Store override for this file
+            if chosen_locs or chosen_vendor:
+                file_overrides[f.name] = {
+                    "gl_vendor": chosen_vendor,
+                    "gl_locs":   chosen_locs,
+                }
+
+        if has_bad and not gl_upload:
             gap(4)
             st.markdown(
                 '<div style="font-family:\'JetBrains Mono\',monospace; font-size:11px;'
-                ' color:#6B7A8D; padding:4px 0;">Files with unresolved names will be skipped.</div>',
+                ' color:#F87171; padding:4px 0;">⚠ Upload the GL file first to enable smart matching.</div>',
+                unsafe_allow_html=True)
+        elif has_bad:
+            gap(4)
+            st.markdown(
+                '<div style="font-family:\'JetBrains Mono\',monospace; font-size:11px;'
+                ' color:#6B7A8D; padding:4px 0;">Unresolved files will be skipped. '
+                'A generic parser will be used for new vendors.</div>',
                 unsafe_allow_html=True)
 
     gap(28)
@@ -958,14 +1076,13 @@ def main():
 
                 stmt_paths = []
                 for su in stmt_uploads:
-                    # Use corrected name if user renamed it, otherwise original
-                    effective_name = name_overrides.get(su.name, su.name)
-                    sp = os.path.join(tmpdir, effective_name)
+                    sp = os.path.join(tmpdir, su.name)
                     with open(sp, "wb") as f:
                         f.write(su.getvalue())
                     stmt_paths.append(sp)
 
-                result_bytes, result_fn = run_reconciliation(gl_path, stmt_paths, log_fn=log)
+                result_bytes, result_fn = run_reconciliation(
+                    gl_path, stmt_paths, log_fn=log, file_overrides=file_overrides)
         except ValueError as e:
             st.markdown(f"""<div style="font-family:'JetBrains Mono',monospace; font-size:12px;
                 color:#F87171; margin-top:12px;">✕&nbsp;&nbsp;{e}</div>""", unsafe_allow_html=True)
