@@ -39,7 +39,7 @@ VM = {
     "UNIFIRST":"Unifirst Corporation",
     "CULIGAN":"Culligan Water","CULLIGAN":"Culligan Water",
     "SAMUELS":"Samuels and Son Seafood South Coast LLC",
-    "WRI":"Caspers Service Company LLC",
+    "WRI":"WRIGHTS GOURMET HOUSE",
     "COZZINI":"Cozzini Bros. Inc",
 }
 
@@ -96,8 +96,18 @@ def _pdf(fp):
     try:
         pdf = pdfplumber.open(fp)
         t = "\n".join(p.extract_text() or "" for p in pdf.pages)
-        pdf.close(); return t
-    except Exception as e:
+        pdf.close()
+        if t.strip():
+            return t
+    except Exception:
+        pass
+    # Fallback: OCR for scanned documents
+    try:
+        from pdf2image import convert_from_path
+        import pytesseract
+        pages = convert_from_path(fp, dpi=200)
+        return "\n".join(pytesseract.image_to_string(p) for p in pages)
+    except Exception:
         return ""
 
 def parse_buccaneer(t):
@@ -348,6 +358,20 @@ def parse_generic(t):
             except: pass
     return R
 
+
+def parse_wrights(t):
+    """Wright's Gourmet House — OCR splits invoice lines from amounts into two columns."""
+    R = []
+    inv_lines = re.findall(r'(\d{2}/\d{2}/\d{2})\s+(\d{7})', t)
+    parts = re.split(r'Amount\s+Balance\s+Due\s+by', t, maxsplit=1, flags=re.IGNORECASE)
+    amt_section = parts[1] if len(parts) > 1 else t
+    amt_lines = re.findall(r'([\d,]+\.\d{2})\s+[\d,]+\.\d{2}\s+\d{2}/\d{2}/\d{2}', amt_section)
+    for i, (date, inv) in enumerate(inv_lines):
+        if i < len(amt_lines):
+            R.append({"Date":date,"Invoice":inv,
+                      "Amount":float(amt_lines[i].replace(",","")),"Type":"Invoice"})
+    return R
+
 PARSERS = {
     "BUCCANEER":parse_buccaneer,"CKS BAR":parse_cks,"CKS":parse_cks,
     "ED DON":parse_edward_don,"ROMANOS COF BAR":parse_romanos,"ROMANOS":parse_romanos,
@@ -361,7 +385,7 @@ PARSERS = {
     "UNIFIRST":parse_unifirst,
     "CULIGAN":parse_culligan,"CULLIGAN":parse_culligan,
     "SAMUELS":parse_samuels,
-    "WRI":parse_wri,
+    "WRI":parse_wrights,
     "COZZINI":parse_cozzini,
 }
 
@@ -573,8 +597,11 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
             grps.setdefault(("_OV_", f), []).append(f)
         else:
             l, v = fi(f)
-            if l and v: grps.setdefault((l,v),[]).append(f)
-            else: log(f"  SKIP (unrecognised name): {f}")
+            if l and v:
+                grps.setdefault((l,v),[]).append(f)
+            else:
+                log(f"  Unrecognised filename: {f} — will attempt smart match")
+                grps.setdefault(("_SMART_", f), []).append(f)
     sel = {}
     for k, fl in grps.items():
         fl.sort(reverse=True); sel[k] = fl[0]
@@ -618,6 +645,24 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
     for (loc, vk), fn in sorted(sel.items()):
         fp = stmt_map[fn]
         ov = file_overrides.get(fn, {})
+
+        if loc == "_SMART_":
+            log(f"Smart-matching: {fn}")
+            txt = _pdf(fp)
+            if not txt.strip():
+                log(f"  No text extracted (scanned + OCR failed)"); continue
+            # Try Wright's parser first (most common scanned format), then generic
+            rows = parse_wrights(txt) or parse_generic(txt)
+            if not rows:
+                log(f"  No invoice rows found"); continue
+            smart = smart_invoice_match(rows, gl, log)
+            if smart:
+                for sg in smart:
+                    do(sg["label"], sg["rows"], sg["vendor"], [sg["loc_id"]], fn)
+            else:
+                log(f"  Invoice numbers not found in GL — filing as unmatched")
+                do(fn[:31], rows, "", [], fn)
+            continue
 
         if loc == "_OV_":
             gv   = ov.get("gl_vendor", "")
