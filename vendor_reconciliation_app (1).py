@@ -920,12 +920,19 @@ def main():
     ::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--teal-dim); }
 
-    /* Hide file thumbnail preview boxes */
+    /* Hide file thumbnail preview boxes — target every possible selector */
     [data-testid="stFileUploaderFileData"] > div:first-child,
     [data-testid="stFileUploaderFileData"] img,
     [data-testid="stFileUploaderFileData"] svg,
-    [data-testid="stFileUploaderFile"] > div:first-child > div:first-child {
+    [data-testid="stFileUploaderFile"] > div:first-child > div:first-child,
+    [data-testid="stFileUploaderFile"] > div:first-child > div:first-child > div,
+    [data-baseweb="file-uploader"] [data-testid="stFileUploaderFile"] > div > div:first-child,
+    .stFileUploaderFile > div > div:first-child,
+    [data-testid="stFileUploaderFileData"] > div:first-of-type {
         display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+        overflow: hidden !important;
     }
     /* Style the delete X button on each file chip */
     [data-testid="stFileUploaderDeleteBtn"] button {
@@ -1093,18 +1100,25 @@ def main():
             shutil.rmtree(tmpdir, ignore_errors=True)
 
         if result_bytes:
-            gap(20)
+            gap(16)
 
-            # Use backend counts — guaranteed consistent with each other
+            # ── Download button FIRST — always visible right after run ─
+            st.download_button(
+                label="⬇   DOWNLOAD REPORT",
+                data=result_bytes,
+                file_name=result_fn,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+            gap(12)
+
+            # ── Reconciliation banner below download button ───────────
             n_rec  = len(reconciled)
             n_skip = len(skipped)
             total  = n_rec + n_skip
-
-            # ── Reconciliation banner — all info in one box ──────────
             pct        = int(n_rec / total * 100) if total else 0
             bar_filled = int(pct / 5)
             bar        = "█" * bar_filled + "░" * (20 - bar_filled)
-            banner_color = "#CCFF00" if n_skip == 0 else "#CCFF00"
 
             skip_section = ""
             if skipped:
@@ -1131,7 +1145,7 @@ def main():
 
             st.html(f"""
             <div style="background:#22262D; border:2px solid #FF6B00;
-                        border-radius:4px; padding:20px 22px; margin-bottom:14px;">
+                        border-radius:4px; padding:20px 22px;">
                 <div style="font-family:'JetBrains Mono',monospace; font-size:22px;
                             font-weight:700; color:#CCFF00; letter-spacing:-0.01em;
                             margin-bottom:6px;">
@@ -1147,35 +1161,6 @@ def main():
                 </div>
                 {skip_section}
             </div>""")
-
-            gap(4)
-            _stc.html("""
-                <script>
-                    // Streamlit runs in an iframe — scroll the parent window
-                    function scrollParent() {
-                        try {
-                            window.parent.scrollTo({
-                                top: window.parent.document.body.scrollHeight,
-                                behavior: 'smooth'
-                            });
-                        } catch(e) {
-                            // fallback: scroll within iframe
-                            window.scrollTo(0, document.body.scrollHeight);
-                        }
-                    }
-                    // Try immediately, then retry after render settles
-                    scrollParent();
-                    setTimeout(scrollParent, 400);
-                    setTimeout(scrollParent, 900);
-                </script>
-            """, height=0)
-            st.download_button(
-                label="⬇   DOWNLOAD REPORT",
-                data=result_bytes,
-                file_name=result_fn,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
 
     # ── Footer ───────────────────────────────────────────────────────────
     st.markdown("""
