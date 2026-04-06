@@ -920,20 +920,7 @@ def main():
     ::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--teal-dim); }
 
-    /* Hide file thumbnail preview boxes — target every possible selector */
-    [data-testid="stFileUploaderFileData"] > div:first-child,
-    [data-testid="stFileUploaderFileData"] img,
-    [data-testid="stFileUploaderFileData"] svg,
-    [data-testid="stFileUploaderFile"] > div:first-child > div:first-child,
-    [data-testid="stFileUploaderFile"] > div:first-child > div:first-child > div,
-    [data-baseweb="file-uploader"] [data-testid="stFileUploaderFile"] > div > div:first-child,
-    .stFileUploaderFile > div > div:first-child,
-    [data-testid="stFileUploaderFileData"] > div:first-of-type {
-        display: none !important;
-        width: 0 !important;
-        height: 0 !important;
-        overflow: hidden !important;
-    }
+    /* File thumbnail boxes hidden via JS below */
     /* Style the delete X button on each file chip */
     [data-testid="stFileUploaderDeleteBtn"] button {
         background: transparent !important;
@@ -971,6 +958,38 @@ def main():
         color: var(--muted) !important;
     }
     </style>
+    """)
+
+    # ── JS: remove file thumbnail boxes after render ────────────────────
+    st.html("""
+    <script>
+    (function removeThumbs() {
+        function clean() {
+            // Find every file item in the uploader
+            var items = window.parent.document.querySelectorAll(
+                '[data-testid="stFileUploaderFile"]'
+            );
+            items.forEach(function(item) {
+                // The thumbnail is always the first child div with no text content
+                var children = item.querySelectorAll('div');
+                children.forEach(function(d) {
+                    var style = window.parent.getComputedStyle(d);
+                    var bg = style.backgroundColor;
+                    var w = d.offsetWidth; var h = d.offsetHeight;
+                    // White/light rounded box with no meaningful text
+                    if (w > 10 && w < 120 && h > 10 && h < 120 &&
+                        d.innerText.trim() === '' &&
+                        !d.querySelector('button')) {
+                        d.style.display = 'none';
+                    }
+                });
+            });
+        }
+        // Run immediately and on a short loop to catch dynamic renders
+        clean();
+        setInterval(clean, 500);
+    })();
+    </script>
     """)
 
     # ── App header ───────────────────────────────────────────────────────
