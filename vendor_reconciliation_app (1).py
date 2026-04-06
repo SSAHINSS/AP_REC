@@ -217,6 +217,10 @@ def main():
     [data-testid="stFileUploader"]:hover {
         border-color: var(--ox-b) !important;
     }
+    [data-testid="stFileUploader"]:focus-within {
+        border-color: var(--ox-d) !important;
+        box-shadow: 0 0 16px var(--ox-glow) !important;
+    }
     /* Kill the blue drag-over ring — JS replaces it with orange */
     [data-testid="stFileUploaderDropzone"] {
         box-shadow: none !important;
@@ -241,7 +245,7 @@ def main():
         color: var(--text) !important;
         padding: 8px 20px !important;
         transition: all 0.15s !important;
-        filter: drop-shadow(2px 2px 0px var(--shadow)) !important;
+        filter: drop-shadow(3px 4px 5px rgba(10,1,0,0.65)) !important;
     }
     [data-testid="stFileUploaderDropzone"] button p {
         font-family: var(--mono) !important;
@@ -256,7 +260,7 @@ def main():
     }
     [data-testid="stFileUploaderDropzone"] button:hover {
         border-color: var(--ox-b) !important;
-        filter: drop-shadow(2px 2px 0px var(--shadow)) !important;
+        filter: drop-shadow(3px 4px 5px rgba(10,1,0,0.65)) !important;
     }
     [data-testid="stFileUploaderDropzone"] button:hover p { color: var(--ox) !important; }
 
@@ -300,13 +304,12 @@ def main():
         border-radius: 2px !important;
         width: 100% !important;
         transition: all 0.2s !important;
-        filter: drop-shadow(3px 3px 0px var(--shadow)) !important;
+        filter: drop-shadow(3px 4px 5px rgba(10,1,0,0.65)) !important;
     }
     .stButton > button:hover:not(:disabled) {
         background: var(--ox-glow) !important;
         border-color: var(--ox) !important;
-        filter: drop-shadow(3px 3px 0px var(--shadow)),
-                drop-shadow(0 0 18px var(--ox-glow)) !important;
+        filter: drop-shadow(3px 4px 5px rgba(10,1,0,0.65)) drop-shadow(0 0 20px rgba(255,112,48,0.15)) !important;
     }
     .stButton > button:disabled {
         border-color: var(--dim) !important;
@@ -329,12 +332,11 @@ def main():
         border-radius: 2px !important;
         width: 100% !important;
         transition: all 0.2s !important;
-        filter: drop-shadow(4px 4px 0px var(--shadow)) !important;
+        filter: drop-shadow(3px 4px 5px rgba(10,1,0,0.65)) !important;
     }
     [data-testid="stDownloadButton"] > button:hover {
         background: var(--ox-d) !important;
-        filter: drop-shadow(4px 4px 0px var(--shadow)),
-                drop-shadow(0 0 22px var(--ox-glow)) !important;
+        filter: drop-shadow(3px 4px 5px rgba(10,1,0,0.65)) drop-shadow(0 0 20px rgba(255,112,48,0.15)) !important;
     }
 
     /* ── Password input — one clean outer border ── */
@@ -439,7 +441,7 @@ def main():
         letter-spacing: 0.08em; padding: 6px 12px;
         border: 1px solid var(--ox-b); border-radius: 2px;
         background: var(--ox-glow);
-        filter: drop-shadow(2px 2px 0px var(--shadow));
+        filter: drop-shadow(3px 4px 5px rgba(10,1,0,0.65));
         animation: badgeIn 0.4s ease forwards;
     }
     @keyframes badgeIn {
@@ -499,28 +501,71 @@ def main():
             if (inp) inp.focus();
         }, 6400);
 
-        // ── Orange drag ring on file uploaders ──
-        function attachDragRings() {
+        // ── Orange drag ring + X clear buttons ──
+        function setupUploaders() {
             var zones = doc.querySelectorAll('[data-testid="stFileUploaderDropzone"]');
-            if (!zones.length) { setTimeout(attachDragRings, 300); return; }
+            if (!zones.length) { setTimeout(setupUploaders, 300); return; }
+
+            // Drag ring
             zones.forEach(function(z) {
+                if (z._apSetup) return;
+                z._apSetup = true;
+                var parent = z.closest('[data-testid="stFileUploader"]');
                 z.addEventListener('dragenter', function() {
-                    z.parentElement.style.borderColor = 'rgba(255,112,48,0.7)';
-                    z.parentElement.style.boxShadow  = '0 0 14px rgba(255,112,48,0.15)';
+                    if(parent){ parent.style.borderColor='rgba(255,112,48,0.7)';
+                                parent.style.boxShadow='0 0 16px rgba(255,112,48,0.15)'; }
                 });
                 z.addEventListener('dragleave', function(e) {
-                    if (!z.contains(e.relatedTarget)) {
-                        z.parentElement.style.borderColor = '';
-                        z.parentElement.style.boxShadow  = '';
-                    }
+                    if(!z.contains(e.relatedTarget) && parent){
+                        parent.style.borderColor='';
+                        parent.style.boxShadow=''; }
                 });
                 z.addEventListener('drop', function() {
-                    z.parentElement.style.borderColor = '';
-                    z.parentElement.style.boxShadow  = '';
+                    if(parent){ parent.style.borderColor='';
+                                parent.style.boxShadow=''; }
                 });
             });
+
+            // X overlay button — appears when files are loaded
+            // Find hidden clear buttons and inject visual X into their uploader
+            var allBtns = Array.from(doc.querySelectorAll('button[data-testid="stBaseButton-secondary"]'));
+            allBtns.forEach(function(btn) {
+                var p = btn.querySelector('p');
+                if (!p) return;
+                var txt = p.textContent || '';
+                if (txt.indexOf('remove file') === -1 && txt.indexOf('clear all') === -1) return;
+
+                // Hide the Streamlit button
+                var wrapper = btn.closest('.stButton') || btn.parentElement;
+                if (wrapper) wrapper.classList.add('ap-x-hidden');
+
+                // Find the nearest uploader above this button in the DOM
+                var block = btn.closest('[data-testid="stVerticalBlock"]');
+                if (!block) return;
+                var uploaders = Array.from(block.querySelectorAll('[data-testid="stFileUploader"]'));
+                var uploader = uploaders[txt.indexOf('remove file') !== -1 ? 0 : 1] || uploaders[uploaders.length - 1];
+                if (!uploader) return;
+                if (uploader.querySelector('.ap-x-btn')) return;
+
+                uploader.style.position = 'relative';
+                var x = doc.createElement('button');
+                x.className = 'ap-x-btn';
+                x.innerHTML = '✕';
+                x.title = 'Clear files';
+                x.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    btn.click();
+                });
+                uploader.appendChild(x);
+            });
         }
-        setTimeout(attachDragRings, 800);
+
+        // Run on load and watch for DOM changes (files being added/removed)
+        setTimeout(setupUploaders, 800);
+        var obs = new MutationObserver(function() { setupUploaders(); });
+        setTimeout(function() {
+            obs.observe(doc.body, { childList: true, subtree: true });
+        }, 1000);
     })();
     </script>
     """)
@@ -743,7 +788,7 @@ def main():
             <div style="background:var(--surface);
                 border:2px solid var(--ox-d);border-radius:2px;
                 padding:20px 22px;font-family:var(--mono);
-                filter:drop-shadow(4px 4px 0px var(--shadow));
+                filter:drop-shadow(3px 4px 5px rgba(10,1,0,0.65));
                 animation:sectionIn 0.4s ease forwards;">
                 <div style="font-size:22px;font-weight:700;
                     color:#FFA868;letter-spacing:-0.01em;margin-bottom:6px;">
