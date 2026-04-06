@@ -401,30 +401,33 @@ def main():
         box-shadow: none !important;
     }
 
-    /* ── Clear buttons — hidden Streamlit triggers, visual X injected by JS ── */
+    /* ── Clear X buttons (in narrow column next to note) ── */
     .ap-x-hidden { display: none !important; }
-    .ap-x-btn {
-        position: absolute !important;
-        top: 7px !important; right: 7px !important;
-        width: 18px !important; height: 18px !important;
-        background: var(--hi) !important;
+    .ap-x-btn { display: none !important; }
+    [data-testid="stHorizontalBlock"] .stButton > button {
+        background: transparent !important;
         border: 1px solid var(--dim) !important;
-        border-radius: 2px !important;
         color: var(--muted) !important;
-        font-size: 10px !important;
         font-family: var(--mono) !important;
-        cursor: pointer !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        z-index: 20 !important;
+        font-size: 11px !important;
+        width: auto !important;
+        min-width: 0 !important;
+        padding: 4px 8px !important;
+        border-radius: 2px !important;
+        filter: none !important;
+        letter-spacing: 0 !important;
+        margin-top: 6px !important;
         transition: all 0.15s !important;
-        line-height: 1 !important;
-        padding: 0 !important;
     }
-    .ap-x-btn:hover {
+    [data-testid="stHorizontalBlock"] .stButton > button:hover {
         border-color: #F87171 !important;
         color: #F87171 !important;
+        filter: none !important;
+    }
+    [data-testid="stHorizontalBlock"] .stButton > button p {
+        font-size: 11px !important;
+        text-align: center !important;
+        margin: 0 !important;
     }
 
     /* ── Spinner ── */
@@ -704,10 +707,13 @@ def main():
         key=f"gl_file_{st.session_state.gl_key}",
         label_visibility="collapsed")
     if gl_upload:
-        note(gl_upload.name)
-        if st.button("✕  remove file", key="clear_gl", use_container_width=False):
-            st.session_state.gl_key += 1
-            st.rerun()
+        c1, c2 = st.columns([18, 1])
+        with c1:
+            note(gl_upload.name)
+        with c2:
+            if st.button("✕", key="clear_gl", help="Remove file"):
+                st.session_state.gl_key += 1
+                st.rerun()
     gap(28)
 
     # ── 03  Vendor Statements ─────────────────────────────────────────────
@@ -719,10 +725,13 @@ def main():
         label_visibility="collapsed")
     if stmt_uploads:
         n = len(stmt_uploads)
-        note(f'{n} file{"s" if n != 1 else ""} loaded')
-        if st.button(f"✕  clear all {n} file{'s' if n != 1 else ''}", key="clear_stmt", use_container_width=False):
-            st.session_state.stmt_key += 1
-            st.rerun()
+        c1, c2 = st.columns([18, 1])
+        with c1:
+            note(f'{n} file{"s" if n != 1 else ""} loaded')
+        with c2:
+            if st.button("✕", key="clear_stmt", help=f"Clear all {n} files"):
+                st.session_state.stmt_key += 1
+                st.rerun()
     gap(32)
 
     # ── 04  Execute ───────────────────────────────────────────────────────
