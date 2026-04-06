@@ -216,12 +216,12 @@ def main():
     [data-testid="stFileUploaderDropzoneInstructions"] span {
         color: var(--muted) !important;
         font-family: var(--mono) !important;
-        font-size: 12px !important;
+        font-size: 13px !important;
     }
     [data-testid="stFileUploaderDropzoneInstructions"] small {
         color: var(--dim) !important;
         font-family: var(--mono) !important;
-        font-size: 10px !important;
+        font-size: 12px !important;
     }
     [data-testid="stFileUploaderDropzone"] [data-testid="stIconMaterial"] {
         display: none !important;
@@ -237,7 +237,7 @@ def main():
     }
     [data-testid="stFileUploaderDropzone"] button p {
         font-family: var(--mono) !important;
-        font-size: 11px !important;
+        font-size: 13px !important;
         letter-spacing: 0.06em !important;
         color: var(--text) !important;
         text-align: center !important;
@@ -261,7 +261,7 @@ def main():
     [data-testid="stFileChip"] > div:first-child { display: none !important; }
     [data-testid="stFileChipName"] {
         font-family: var(--mono) !important;
-        font-size: 11px !important;
+        font-size: 13px !important;
         color: var(--text) !important;
     }
     [data-testid="stFileChipDeleteBtn"] button {
@@ -284,11 +284,11 @@ def main():
         border: 2px solid var(--ox-d) !important;
         color: var(--ox) !important;
         font-family: var(--mono) !important;
-        font-size: 11px !important;
+        font-size: 13px !important;
         font-weight: 600 !important;
         letter-spacing: 0.14em !important;
         text-transform: uppercase !important;
-        padding: 14px !important;
+        padding: 16px !important;
         border-radius: 2px !important;
         width: 100% !important;
         transition: all 0.2s !important;
@@ -313,11 +313,11 @@ def main():
         border: none !important;
         color: #FFF0E8 !important;
         font-family: var(--mono) !important;
-        font-size: 11px !important;
+        font-size: 13px !important;
         font-weight: 700 !important;
         letter-spacing: 0.14em !important;
         text-transform: uppercase !important;
-        padding: 15px !important;
+        padding: 16px !important;
         border-radius: 2px !important;
         width: 100% !important;
         transition: all 0.2s !important;
@@ -336,7 +336,7 @@ def main():
         border-radius: 2px !important;
         color: var(--ox) !important;
         font-family: var(--mono) !important;
-        font-size: 14px !important;
+        font-size: 16px !important;
         caret-color: var(--ox) !important;
         padding: 10px 14px !important;
         transition: border-color 0.2s, box-shadow 0.2s !important;
@@ -376,7 +376,7 @@ def main():
     /* ── Auth badge ── */
     .auth-badge {
         display: inline-flex; align-items: center; gap: 8px;
-        font-family: var(--mono); font-size: 11px; color: var(--ox);
+        font-family: var(--mono); font-size: 14px; color: var(--ox);
         letter-spacing: 0.08em; padding: 6px 12px;
         border: 1px solid var(--ox-b); border-radius: 2px;
         background: var(--ox-glow);
@@ -401,64 +401,66 @@ def main():
 
     <script>
     (function() {
-        // Auto-focus password
-        function focusPw() {
-            var inp = window.parent.document.querySelector('[data-testid="stTextInput"] input');
-            if (inp) inp.focus();
-            else setTimeout(focusPw, 120);
-        }
-        setTimeout(focusPw, 400);
+        var doc = window.parent.document;
 
-        // Sequential page reveal after logo completes (~4.5s)
-        // Finds all content blocks below the logo and fades them in top-to-bottom
+        // ── Hide all page content immediately on load (except logo block) ──
+        function hideContent() {
+            var blocks = Array.from(doc.querySelectorAll(
+                '[data-testid="stVerticalBlock"] > div'
+            ));
+            if (blocks.length < 2) { setTimeout(hideContent, 80); return; }
+            blocks.slice(1).forEach(function(el) {
+                el.style.opacity = "0";
+                el.style.transform = "translateY(12px)";
+                el.style.pointerEvents = "none";
+            });
+        }
+        hideContent();
+
+        // ── After logo animation completes, reveal elements top-to-bottom ──
+        // Logo: 1s delay + ~1.4s rain + ~1s settle + ~2.2s gradient merge = ~5.6s
+        // We start reveal at 5.8s to be safe
         setTimeout(function() {
-            try {
-                var doc = window.parent.document;
-                // All element containers in the main block
-                var all = Array.from(doc.querySelectorAll(
-                    '[data-testid="stVerticalBlock"] > div'
-                ));
-                // Skip the logo component block (first child)
-                var toReveal = all.slice(1).filter(function(el) {
-                    return el.offsetHeight > 0 || el.offsetWidth > 0;
-                });
-                // Hide all first
-                toReveal.forEach(function(el) {
-                    el.style.opacity = "0";
-                    el.style.transform = "translateY(8px)";
-                });
-                // Stagger reveal
-                toReveal.forEach(function(el, i) {
-                    setTimeout(function() {
-                        el.style.transition = "opacity 0.45s ease, transform 0.45s ease";
-                        el.style.opacity = "1";
-                        el.style.transform = "translateY(0)";
-                    }, i * 160);
-                });
-            } catch(e) {}
-        }, 4600);
+            var blocks = Array.from(doc.querySelectorAll(
+                '[data-testid="stVerticalBlock"] > div'
+            )).slice(1);
+            blocks.forEach(function(el, i) {
+                setTimeout(function() {
+                    el.style.transition = "opacity 0.55s cubic-bezier(0.4,0,0.2,1), transform 0.55s cubic-bezier(0.4,0,0.2,1)";
+                    el.style.opacity = "1";
+                    el.style.transform = "translateY(0)";
+                    el.style.pointerEvents = "";
+                }, i * 200);
+            });
+        }, 5800);
+
+        // ── Auto-focus password after content reveals ──
+        setTimeout(function() {
+            var inp = doc.querySelector('[data-testid="stTextInput"] input');
+            if (inp) inp.focus();
+        }, 6400);
     })();
     </script>
     """)
 
     # ── Helpers ───────────────────────────────────────────────────────────
     def section(num, title, hint="", delay=0):
-        h = (f'<span style="font-family:var(--sans);font-size:12px;color:var(--dim);'
-             f'font-weight:300;margin-left:10px;">{hint}</span>') if hint else ""
+        h = (f'<span style="font-family:var(--sans);font-size:14px;color:var(--dim);'
+             f'font-weight:300;margin-left:12px;">{hint}</span>') if hint else ""
         st.html(f"""<div class="section-row" style="animation-delay:{delay}ms;">
-            <span style="font-family:var(--mono);font-size:10px;color:var(--dim);
-                letter-spacing:0.2em;">{num}</span>
-            <span style="font-family:var(--mono);font-size:12px;font-weight:600;
+            <span style="font-family:var(--mono);font-size:12px;color:var(--dim);
+                letter-spacing:0.18em;">{num}</span>
+            <span style="font-family:var(--mono);font-size:15px;font-weight:700;
                 color:#DDD0C4;letter-spacing:0.1em;text-transform:uppercase;
-                margin-left:12px;">{title}</span>{h}
+                margin-left:14px;">{title}</span>{h}
         </div>""")
 
     def gap(px=24):
         st.html(f'<div style="margin-bottom:{px}px;"></div>')
 
     def note(msg, color="#FF7030", icon="✓"):
-        st.html(f'<div style="font-family:var(--mono);font-size:12px;'
-                f'color:{color};margin-top:6px;">{icon}&nbsp;&nbsp;{msg}</div>')
+        st.html(f'<div style="font-family:var(--mono);font-size:14px;'
+                f'color:{color};margin-top:8px;">{icon}&nbsp;&nbsp;{msg}</div>')
 
     # ── Logo ─────────────────────────────────────────────────────────────
     logo_html = (
@@ -547,7 +549,7 @@ def main():
     if not st.session_state.authenticated:
         section("01", "Access Key")
         st.html("""<div style="font-family:var(--mono);font-size:11px;color:var(--dim);
-            margin-bottom:10px;letter-spacing:0.04em;">enter access key to continue</div>""")
+            margin-bottom:12px;letter-spacing:0.04em;font-size:14px;">enter access key to continue</div>""")
         password = st.text_input(
             "key", type="password",
             placeholder="••••••••••••",
@@ -675,7 +677,7 @@ def main():
     st.html("""
     <div style="border-top:1px solid #2A2018;margin-top:52px;padding-top:16px;
         display:flex;justify-content:space-between;font-family:var(--mono);
-        font-size:10px;color:var(--dim);letter-spacing:0.1em;text-transform:uppercase;">
+        font-size:12px;color:var(--dim);letter-spacing:0.1em;text-transform:uppercase;">
         <span>internal use only</span>
         <span>◈&nbsp;ap·rec&nbsp;·&nbsp;v6</span>
     </div>""")
