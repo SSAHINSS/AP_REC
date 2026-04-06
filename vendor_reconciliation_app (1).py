@@ -1049,7 +1049,6 @@ def main():
 
         if result_bytes:
             gap(20)
-            st.html('<script>window.scrollTo({top: document.body.scrollHeight, behavior: "smooth"});</script>')
 
             # Use backend counts — guaranteed consistent with each other
             n_rec  = len(reconciled)
@@ -1105,6 +1104,15 @@ def main():
             </div>""")
 
             gap(4)
+            st.html("""
+                <div id="results-anchor"></div>
+                <script>
+                    setTimeout(function() {
+                        var el = document.getElementById('results-anchor');
+                        if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
+                    }, 300);
+                </script>
+            """)
             st.download_button(
                 label="⬇   DOWNLOAD REPORT",
                 data=result_bytes,
