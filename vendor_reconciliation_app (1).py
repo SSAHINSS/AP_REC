@@ -101,35 +101,36 @@ def main():
         font-family: var(--mono) !important;
         font-size: 10px !important;
     }
-    /* Hide duplicate icon text, center button text */
+    /* Hide duplicate icon text */
     [data-testid="stFileUploaderDropzone"] [data-testid="stIconMaterial"] {
         display: none !important;
     }
+    /* Button shell */
     [data-testid="stFileUploaderDropzone"] button {
         background: var(--hi) !important;
         border: 1px solid var(--dim) !important;
         border-radius: 2px !important;
         color: var(--text) !important;
+        padding: 8px 20px !important;
+        transition: all 0.15s !important;
+    }
+    /* Streamlit renders button labels through its markdown engine
+       which wraps text in a <p> tag — that p is what needs centering */
+    [data-testid="stFileUploaderDropzone"] button p {
         font-family: var(--mono) !important;
         font-size: 11px !important;
         letter-spacing: 0.06em !important;
-        padding: 8px 20px 8px 20px !important;
-        height: auto !important;
-        min-height: 0 !important;
-        line-height: 1.2 !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        vertical-align: middle !important;
-    }
-    [data-testid="stFileUploaderDropzone"] button *:not([data-testid="stIconMaterial"]) {
-        line-height: 1.2 !important;
-        vertical-align: middle !important;
+        color: var(--text) !important;
+        text-align: center !important;
         margin: 0 !important;
         padding: 0 !important;
+        line-height: 1 !important;
+        width: 100% !important;
     }
     [data-testid="stFileUploaderDropzone"] button:hover {
         border-color: var(--teal-b) !important;
+    }
+    [data-testid="stFileUploaderDropzone"] button:hover p {
         color: var(--teal) !important;
     }
 
