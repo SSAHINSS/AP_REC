@@ -6,111 +6,108 @@ import streamlit as st
 from reconciliation_engine import run_reconciliation
 
 LOGO_SVG = """<svg width="100%" viewBox="0 0 771 176" xmlns="http://www.w3.org/2000/svg">
-<style>
-.px{opacity:0;animation:pxIn 0.3s ease forwards;}
-@keyframes pxIn{from{opacity:0;transform:scale(0.4);}to{opacity:1;transform:scale(1);}}
-</style>
+
 <defs>
   <filter id="ds" x="-20%" y="-20%" width="150%" height="150%">
     <feDropShadow dx="5" dy="6" stdDeviation="0" flood-color="#0A0100" flood-opacity="1"/>
   </filter>
 </defs>
 <g filter="url(#ds)">
-<rect x="37" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:54ms"/>
-<rect x="54" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:144ms"/>
-<rect x="71" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:180ms"/>
-<rect x="88" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:216ms"/>
-<rect x="20" y="37" width="17" height="17" fill="#FF9050" class="px" style="animation-delay:0ms"/>
-<rect x="105" y="37" width="17" height="17" fill="#FF9050" class="px" style="animation-delay:252ms"/>
-<rect x="20" y="54" width="17" height="17" fill="#FF7A38" class="px" style="animation-delay:18ms"/>
-<rect x="105" y="54" width="17" height="17" fill="#FF7A38" class="px" style="animation-delay:270ms"/>
-<rect x="20" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:36ms"/>
-<rect x="37" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:126ms"/>
-<rect x="54" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:162ms"/>
-<rect x="71" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:198ms"/>
-<rect x="88" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:234ms"/>
-<rect x="105" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:288ms"/>
-<rect x="20" y="88" width="17" height="17" fill="#DC5418" class="px" style="animation-delay:72ms"/>
-<rect x="105" y="88" width="17" height="17" fill="#DC5418" class="px" style="animation-delay:306ms"/>
-<rect x="20" y="105" width="17" height="17" fill="#CC4412" class="px" style="animation-delay:90ms"/>
-<rect x="105" y="105" width="17" height="17" fill="#CC4412" class="px" style="animation-delay:324ms"/>
-<rect x="20" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:108ms"/>
-<rect x="105" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:342ms"/>
-<rect x="156" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:360ms"/>
-<rect x="173" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:432ms"/>
-<rect x="190" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:522ms"/>
-<rect x="207" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:558ms"/>
-<rect x="224" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:594ms"/>
-<rect x="156" y="37" width="17" height="17" fill="#FF9050" class="px" style="animation-delay:378ms"/>
-<rect x="241" y="37" width="17" height="17" fill="#FF9050" class="px" style="animation-delay:630ms"/>
-<rect x="156" y="54" width="17" height="17" fill="#FF7A38" class="px" style="animation-delay:396ms"/>
-<rect x="241" y="54" width="17" height="17" fill="#FF7A38" class="px" style="animation-delay:648ms"/>
-<rect x="156" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:414ms"/>
-<rect x="173" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:504ms"/>
-<rect x="190" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:540ms"/>
-<rect x="207" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:576ms"/>
-<rect x="224" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:612ms"/>
-<rect x="156" y="88" width="17" height="17" fill="#DC5418" class="px" style="animation-delay:450ms"/>
-<rect x="156" y="105" width="17" height="17" fill="#CC4412" class="px" style="animation-delay:468ms"/>
-<rect x="156" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:486ms"/>
-<rect x="309" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:666ms"/>
-<rect x="309" y="88" width="17" height="17" fill="#DC5418" class="px" style="animation-delay:684ms"/>
-<rect x="377" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:702ms"/>
-<rect x="394" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:774ms"/>
-<rect x="411" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:864ms"/>
-<rect x="428" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:900ms"/>
-<rect x="445" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:954ms"/>
-<rect x="377" y="37" width="17" height="17" fill="#FF9050" class="px" style="animation-delay:720ms"/>
-<rect x="462" y="37" width="17" height="17" fill="#FF9050" class="px" style="animation-delay:1008ms"/>
-<rect x="377" y="54" width="17" height="17" fill="#FF7A38" class="px" style="animation-delay:738ms"/>
-<rect x="462" y="54" width="17" height="17" fill="#FF7A38" class="px" style="animation-delay:1026ms"/>
-<rect x="377" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:756ms"/>
-<rect x="394" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:846ms"/>
-<rect x="411" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:882ms"/>
-<rect x="428" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:936ms"/>
-<rect x="445" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:990ms"/>
-<rect x="377" y="88" width="17" height="17" fill="#DC5418" class="px" style="animation-delay:792ms"/>
-<rect x="411" y="88" width="17" height="17" fill="#DC5418" class="px" style="animation-delay:918ms"/>
-<rect x="377" y="105" width="17" height="17" fill="#CC4412" class="px" style="animation-delay:810ms"/>
-<rect x="428" y="105" width="17" height="17" fill="#CC4412" class="px" style="animation-delay:972ms"/>
-<rect x="377" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:828ms"/>
-<rect x="445" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:1044ms"/>
-<rect x="513" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:1062ms"/>
-<rect x="530" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:1134ms"/>
-<rect x="547" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:1224ms"/>
-<rect x="564" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:1278ms"/>
-<rect x="581" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:1332ms"/>
-<rect x="598" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:1386ms"/>
-<rect x="513" y="37" width="17" height="17" fill="#FF9050" class="px" style="animation-delay:1080ms"/>
-<rect x="513" y="54" width="17" height="17" fill="#FF7A38" class="px" style="animation-delay:1098ms"/>
-<rect x="513" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:1116ms"/>
-<rect x="530" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:1206ms"/>
-<rect x="547" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:1260ms"/>
-<rect x="564" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:1314ms"/>
-<rect x="581" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:1368ms"/>
-<rect x="513" y="88" width="17" height="17" fill="#DC5418" class="px" style="animation-delay:1152ms"/>
-<rect x="513" y="105" width="17" height="17" fill="#CC4412" class="px" style="animation-delay:1170ms"/>
-<rect x="513" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:1188ms"/>
-<rect x="530" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:1242ms"/>
-<rect x="547" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:1296ms"/>
-<rect x="564" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:1350ms"/>
-<rect x="581" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:1404ms"/>
-<rect x="598" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:1422ms"/>
-<rect x="666" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:1494ms"/>
-<rect x="683" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:1548ms"/>
-<rect x="700" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:1584ms"/>
-<rect x="717" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:1620ms"/>
-<rect x="734" y="20" width="17" height="17" fill="#FFA868" class="px" style="animation-delay:1656ms"/>
-<rect x="649" y="37" width="17" height="17" fill="#FF9050" class="px" style="animation-delay:1440ms"/>
-<rect x="649" y="54" width="17" height="17" fill="#FF7A38" class="px" style="animation-delay:1458ms"/>
-<rect x="649" y="71" width="17" height="17" fill="#EE6422" class="px" style="animation-delay:1476ms"/>
-<rect x="649" y="88" width="17" height="17" fill="#DC5418" class="px" style="animation-delay:1512ms"/>
-<rect x="649" y="105" width="17" height="17" fill="#CC4412" class="px" style="animation-delay:1530ms"/>
-<rect x="666" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:1566ms"/>
-<rect x="683" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:1602ms"/>
-<rect x="700" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:1638ms"/>
-<rect x="717" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:1674ms"/>
-<rect x="734" y="122" width="17" height="17" fill="#BE380E" class="px" style="animation-delay:1692ms"/>
+<rect x="37" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="54" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="71" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="88" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="20" y="37" width="17" height="17" fill="#FF9050"/>
+<rect x="105" y="37" width="17" height="17" fill="#FF9050"/>
+<rect x="20" y="54" width="17" height="17" fill="#FF7A38"/>
+<rect x="105" y="54" width="17" height="17" fill="#FF7A38"/>
+<rect x="20" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="37" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="54" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="71" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="88" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="105" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="20" y="88" width="17" height="17" fill="#DC5418"/>
+<rect x="105" y="88" width="17" height="17" fill="#DC5418"/>
+<rect x="20" y="105" width="17" height="17" fill="#CC4412"/>
+<rect x="105" y="105" width="17" height="17" fill="#CC4412"/>
+<rect x="20" y="122" width="17" height="17" fill="#BE380E"/>
+<rect x="105" y="122" width="17" height="17" fill="#BE380E"/>
+<rect x="156" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="173" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="190" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="207" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="224" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="156" y="37" width="17" height="17" fill="#FF9050"/>
+<rect x="241" y="37" width="17" height="17" fill="#FF9050"/>
+<rect x="156" y="54" width="17" height="17" fill="#FF7A38"/>
+<rect x="241" y="54" width="17" height="17" fill="#FF7A38"/>
+<rect x="156" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="173" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="190" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="207" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="224" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="156" y="88" width="17" height="17" fill="#DC5418"/>
+<rect x="156" y="105" width="17" height="17" fill="#CC4412"/>
+<rect x="156" y="122" width="17" height="17" fill="#BE380E"/>
+<rect x="309" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="309" y="88" width="17" height="17" fill="#DC5418"/>
+<rect x="377" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="394" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="411" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="428" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="445" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="377" y="37" width="17" height="17" fill="#FF9050"/>
+<rect x="462" y="37" width="17" height="17" fill="#FF9050"/>
+<rect x="377" y="54" width="17" height="17" fill="#FF7A38"/>
+<rect x="462" y="54" width="17" height="17" fill="#FF7A38"/>
+<rect x="377" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="394" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="411" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="428" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="445" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="377" y="88" width="17" height="17" fill="#DC5418"/>
+<rect x="411" y="88" width="17" height="17" fill="#DC5418"/>
+<rect x="377" y="105" width="17" height="17" fill="#CC4412"/>
+<rect x="428" y="105" width="17" height="17" fill="#CC4412"/>
+<rect x="377" y="122" width="17" height="17" fill="#BE380E"/>
+<rect x="445" y="122" width="17" height="17" fill="#BE380E"/>
+<rect x="513" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="530" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="547" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="564" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="581" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="598" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="513" y="37" width="17" height="17" fill="#FF9050"/>
+<rect x="513" y="54" width="17" height="17" fill="#FF7A38"/>
+<rect x="513" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="530" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="547" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="564" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="581" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="513" y="88" width="17" height="17" fill="#DC5418"/>
+<rect x="513" y="105" width="17" height="17" fill="#CC4412"/>
+<rect x="513" y="122" width="17" height="17" fill="#BE380E"/>
+<rect x="530" y="122" width="17" height="17" fill="#BE380E"/>
+<rect x="547" y="122" width="17" height="17" fill="#BE380E"/>
+<rect x="564" y="122" width="17" height="17" fill="#BE380E"/>
+<rect x="581" y="122" width="17" height="17" fill="#BE380E"/>
+<rect x="598" y="122" width="17" height="17" fill="#BE380E"/>
+<rect x="666" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="683" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="700" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="717" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="734" y="20" width="17" height="17" fill="#FFA868"/>
+<rect x="649" y="37" width="17" height="17" fill="#FF9050"/>
+<rect x="649" y="54" width="17" height="17" fill="#FF7A38"/>
+<rect x="649" y="71" width="17" height="17" fill="#EE6422"/>
+<rect x="649" y="88" width="17" height="17" fill="#DC5418"/>
+<rect x="649" y="105" width="17" height="17" fill="#CC4412"/>
+<rect x="666" y="122" width="17" height="17" fill="#BE380E"/>
+<rect x="683" y="122" width="17" height="17" fill="#BE380E"/>
+<rect x="700" y="122" width="17" height="17" fill="#BE380E"/>
+<rect x="717" y="122" width="17" height="17" fill="#BE380E"/>
+<rect x="734" y="122" width="17" height="17" fill="#BE380E"/>
 </g>
 </svg>"""
 
@@ -313,6 +310,21 @@ def main():
         outline: none !important;
     }
     .stTextInput > div > div > input::placeholder { color: var(--dim) !important; }
+    /* Kill Streamlit/BaseWeb blue focus ring on the outer wrapper */
+    [data-baseweb="base-input"],
+    [data-baseweb="input"] {
+        background: var(--surface) !important;
+        border-color: var(--border) !important;
+        box-shadow: none !important;
+        outline: none !important;
+    }
+    [data-baseweb="base-input"]:focus-within,
+    [data-baseweb="input"]:focus-within {
+        border-color: var(--ox-d) !important;
+        box-shadow: 0 0 0 1px var(--ox-d),
+                    0 0 16px var(--ox-glow) !important;
+        outline: none !important;
+    }
 
     /* ── Spinner ── */
     [data-testid="stSpinner"] > div { border-top-color: var(--ox) !important; }
@@ -367,7 +379,7 @@ def main():
              f'font-weight:300;margin-left:10px;">{hint}</span>') if hint else ""
         st.html(f"""<div class="section-row" style="animation-delay:{delay}ms;">
             <span style="font-family:var(--mono);font-size:10px;color:var(--dim);
-                letter-spacing:0.2em;">//&nbsp;{num}</span>
+                letter-spacing:0.2em;">{num}</span>
             <span style="font-family:var(--mono);font-size:12px;font-weight:600;
                 color:#DDD0C4;letter-spacing:0.1em;text-transform:uppercase;
                 margin-left:12px;">{title}</span>{h}
@@ -381,17 +393,37 @@ def main():
                 f'color:{color};margin-top:6px;">{icon}&nbsp;&nbsp;{msg}</div>')
 
     # ── Logo ─────────────────────────────────────────────────────────────
-    st.html(f"""
-    <div style="border-bottom:1px solid #2A2018;padding-bottom:20px;margin-bottom:36px;">
-        {LOGO_SVG}
-        <div style="display:flex;align-items:center;gap:14px;margin-top:14px;">
+    logo_html = (
+        '<div style="border-bottom:1px solid #2A2018;padding-bottom:20px;margin-bottom:36px;">'
+        + LOGO_SVG
+        + '''<div style="display:flex;align-items:center;gap:14px;margin-top:14px;">
             <span style="font-family:var(--mono);font-size:9px;color:var(--dim);
                 letter-spacing:0.14em;">v6.0</span>
             <span style="font-family:var(--sans);font-size:12px;color:var(--muted);
                 font-weight:300;letter-spacing:0.04em;">
                 vendor statement reconciliation processor</span>
-        </div>
-    </div>""")
+        </div></div>
+        <script>
+        (function(){
+            var rects = document.querySelectorAll("svg rect");
+            var sorted = Array.from(rects).sort(function(a,b){
+                var ax=parseFloat(a.getAttribute("x")),ay=parseFloat(a.getAttribute("y"));
+                var bx=parseFloat(b.getAttribute("x")),by=parseFloat(b.getAttribute("y"));
+                return (ax+ay*0.3)-(bx+by*0.3);
+            });
+            sorted.forEach(function(r){r.style.opacity="0";r.style.transition="none";});
+            sorted.forEach(function(r,i){
+                setTimeout(function(){
+                    r.style.transition="opacity 0.2s ease, transform 0.25s ease";
+                    r.style.transformOrigin="center";
+                    r.style.transform="scale(1)";
+                    r.style.opacity="1";
+                }, 60+i*18);
+            });
+        })();
+        </script>'''
+    )
+    st.html(logo_html)
 
     # ── 01  Access Key ────────────────────────────────────────────────────
     if not st.session_state.authenticated:
@@ -414,7 +446,7 @@ def main():
         st.stop()
     else:
         st.html('<div style="margin-bottom:36px;">'
-                '<span class="auth-badge">◈ authenticated</span></div>')
+                '<span class="auth-badge">authenticated</span></div>')
 
     # ── 02  GL Export ─────────────────────────────────────────────────────
     section("02", "GL Export", "accepts .csv", delay=0)
