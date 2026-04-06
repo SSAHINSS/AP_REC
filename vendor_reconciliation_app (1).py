@@ -1058,46 +1058,53 @@ def main():
             n_rec  = len(reconciled)
             n_skip = len(skipped)
 
-            # ── Big reconciliation banner ─────────────────────────────
+            # ── Reconciliation banner — all info in one box ──────────
             pct        = int(n_rec / total * 100) if total else 0
-            bar_filled = int(pct / 5)   # 20 segments max
+            bar_filled = int(pct / 5)
             bar        = "█" * bar_filled + "░" * (20 - bar_filled)
-            banner_color = "#CCFF00" if n_skip == 0 else "#FFD700"
+            banner_color = "#CCFF00" if n_skip == 0 else "#CCFF00"
+
+            skip_section = ""
+            if skipped:
+                skip_rows = "".join(
+                    f'<div style="padding:3px 0; font-size:12px; color:#FF6B00;">'
+                    f'✕&nbsp;&nbsp;{fname}</div>'
+                    for fname in skipped
+                )
+                skip_section = f"""
+                <div style="border-top:1px solid #FF6B0044; margin-top:14px; padding-top:12px;">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:10px;
+                                color:#FF6B00; letter-spacing:0.18em; text-transform:uppercase;
+                                margin-bottom:8px;">✕ Not Reconciled</div>
+                    <div style="font-family:'JetBrains Mono',monospace; line-height:1.8;">
+                        {skip_rows}
+                    </div>
+                </div>"""
+
+            status_line = (
+                f'<span style="color:#CCFF00;">✓ all files processed</span>'
+                if n_skip == 0 else
+                f'<span style="color:#FF6B00;">{n_skip} file{"s" if n_skip!=1 else ""} not reconciled</span>'
+            )
+
             st.html(f"""
-            <div style="background:#22262D; border:2px solid {banner_color}44;
+            <div style="background:#22262D; border:2px solid #FF6B00;
                         border-radius:4px; padding:20px 22px; margin-bottom:14px;">
                 <div style="font-family:'JetBrains Mono',monospace; font-size:22px;
-                            font-weight:700; color:{banner_color}; letter-spacing:-0.01em;
+                            font-weight:700; color:#CCFF00; letter-spacing:-0.01em;
                             margin-bottom:6px;">
                     ◈ &nbsp;{n_rec} / {total} &nbsp;files reconciled
                 </div>
                 <div style="font-family:'JetBrains Mono',monospace; font-size:11px;
-                            color:{banner_color}88; letter-spacing:0.08em; margin-bottom:10px;">
+                            color:#CCFF0088; letter-spacing:0.08em; margin-bottom:10px;">
                     {bar} &nbsp;{pct}%
                 </div>
                 <div style="font-family:'JetBrains Mono',monospace; font-size:11px;
-                            color:#6B7A8D; letter-spacing:0.05em;">
-                    {f'<span style="color:#CCFF00;">✓ all files processed</span>' if n_skip == 0
-                      else f'<span style="color:#FF00CC;">✕ &nbsp;{n_skip} file{"s" if n_skip!=1 else ""} not reconciled — see below</span>'}
+                            letter-spacing:0.05em;">
+                    {status_line}
                 </div>
+                {skip_section}
             </div>""")
-
-            # ── Skipped files panel (neon pink) ───────────────────────
-            if skipped:
-                skip_rows = "".join(
-                    f'<div style="padding:3px 0; font-size:12px; color:#FF00CC;">'
-                    f'✕&nbsp;&nbsp;{fname}&nbsp;&nbsp;'
-                    f'<span style="color:#6B3A5D; font-size:11px;">— not reconciled</span></div>'
-                    for fname in skipped
-                )
-                st.html(f"""
-                <div style="background:#1E1520; border:1px solid #FF00CC55;
-                            border-radius:3px; padding:14px 16px; margin-bottom:16px;">
-                    <div style="font-family:'JetBrains Mono',monospace; font-size:10px;
-                                color:#FF00CC; letter-spacing:0.18em; text-transform:uppercase;
-                                margin-bottom:10px;">⚠ Skipped Files</div>
-                    {skip_rows}
-                </div>""")
 
             gap(4)
             st.download_button(
