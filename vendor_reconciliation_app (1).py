@@ -160,6 +160,10 @@ def main():
 
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
+    if "gl_key" not in st.session_state:
+        st.session_state.gl_key = 0
+    if "stmt_key" not in st.session_state:
+        st.session_state.stmt_key = 0
 
     st.html("""
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
@@ -208,10 +212,14 @@ def main():
         background: var(--surface) !important;
         border: 2px solid var(--border) !important;
         border-radius: 2px !important;
-        transition: border-color 0.2s !important;
+        transition: border-color 0.2s, box-shadow 0.2s !important;
     }
     [data-testid="stFileUploader"]:hover {
         border-color: var(--ox-b) !important;
+    }
+    /* Kill the blue drag-over ring — JS replaces it with orange */
+    [data-testid="stFileUploaderDropzone"] {
+        box-shadow: none !important;
     }
     [data-testid="stFileUploaderDropzoneInstructions"] span {
         color: var(--muted) !important;
@@ -391,6 +399,30 @@ def main():
         box-shadow: none !important;
     }
 
+    /* ── Clear buttons ── */
+    [data-testid="stBaseButton-secondary"][data-testid*="clear"] ~ div,
+    button[kind="secondary"] { all: unset; }
+    .stButton:has(button[data-testid*="clear"]) > button,
+    .stButton:has(button[key*="clear"]) > button {
+        background: transparent !important;
+        border: 1px solid var(--dim) !important;
+        color: var(--muted) !important;
+        font-family: var(--mono) !important;
+        font-size: 11px !important;
+        letter-spacing: 0.06em !important;
+        padding: 4px 12px !important;
+        border-radius: 2px !important;
+        width: auto !important;
+        filter: none !important;
+        margin-top: 4px !important;
+        transition: all 0.15s !important;
+    }
+    .stButton:has(button[data-testid*="clear"]) > button:hover,
+    .stButton:has(button[key*="clear"]) > button:hover {
+        border-color: #F87171 !important;
+        color: #F87171 !important;
+    }
+
     /* ── Spinner ── */
     [data-testid="stSpinner"] > div { border-top-color: var(--ox) !important; }
 
@@ -466,6 +498,29 @@ def main():
             var inp = doc.querySelector('[data-testid="stTextInput"] input');
             if (inp) inp.focus();
         }, 6400);
+
+        // ── Orange drag ring on file uploaders ──
+        function attachDragRings() {
+            var zones = doc.querySelectorAll('[data-testid="stFileUploaderDropzone"]');
+            if (!zones.length) { setTimeout(attachDragRings, 300); return; }
+            zones.forEach(function(z) {
+                z.addEventListener('dragenter', function() {
+                    z.parentElement.style.borderColor = 'rgba(255,112,48,0.7)';
+                    z.parentElement.style.boxShadow  = '0 0 14px rgba(255,112,48,0.15)';
+                });
+                z.addEventListener('dragleave', function(e) {
+                    if (!z.contains(e.relatedTarget)) {
+                        z.parentElement.style.borderColor = '';
+                        z.parentElement.style.boxShadow  = '';
+                    }
+                });
+                z.addEventListener('drop', function() {
+                    z.parentElement.style.borderColor = '';
+                    z.parentElement.style.boxShadow  = '';
+                });
+            });
+        }
+        setTimeout(attachDragRings, 800);
     })();
     </script>
     """)
@@ -596,9 +651,13 @@ def main():
     section("02", "GL Export", "accepts .csv", delay=0)
     gl_upload = st.file_uploader(
         "GL CSV", type=["csv"],
-        key="gl_file", label_visibility="collapsed")
+        key=f"gl_file_{st.session_state.gl_key}",
+        label_visibility="collapsed")
     if gl_upload:
         note(gl_upload.name)
+        if st.button("✕  remove file", key="clear_gl", use_container_width=False):
+            st.session_state.gl_key += 1
+            st.rerun()
     gap(28)
 
     # ── 03  Vendor Statements ─────────────────────────────────────────────
@@ -606,10 +665,14 @@ def main():
     stmt_uploads = st.file_uploader(
         "Vendor Statements", type=["pdf", "xlsx"],
         accept_multiple_files=True,
-        key="stmt_files", label_visibility="collapsed")
+        key=f"stmt_files_{st.session_state.stmt_key}",
+        label_visibility="collapsed")
     if stmt_uploads:
         n = len(stmt_uploads)
         note(f'{n} file{"s" if n != 1 else ""} loaded')
+        if st.button(f"✕  clear all {n} file{'s' if n != 1 else ''}", key="clear_stmt", use_container_width=False):
+            st.session_state.stmt_key += 1
+            st.rerun()
     gap(32)
 
     # ── 04  Execute ───────────────────────────────────────────────────────
