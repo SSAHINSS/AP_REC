@@ -198,15 +198,19 @@ def main():
     #MainMenu, footer, [data-testid="stToolbar"],
     [data-testid="stDecoration"], [data-testid="stHeader"] {{ display:none !important; }}
 
-    /* Background */
-    .stApp, [data-testid="stAppViewContainer"],
-    [data-testid="stBottom"] {{ background: var(--bg) !important; }}
-    .main .block-container {{
-        background: var(--bg) !important;
+    /* Background — hardcoded warm charcoal so nothing overrides it */
+    html, body, .stApp, [data-testid="stAppViewContainer"],
+    [data-testid="stBottom"], [data-testid="stHeader"],
+    section.main, .main, .block-container {
+        background: #1E1B17 !important;
+        background-color: #1E1B17 !important;
+    }
+    .main .block-container {
+        background: #1E1B17 !important;
         max-width: 720px !important;
         padding-top: 2.5rem !important;
         padding-bottom: 3rem !important;
-    }}
+    }
 
     /* Global text */
     .stApp p, .stApp div, .stApp span,
@@ -359,18 +363,31 @@ def main():
     /* ── Password input — single border on outer wrapper only ── */
 
     /* Outer container: the ONE border */
-    [data-testid="stTextInput"] [data-baseweb="input"] {{
-        background: {SURFACE} !important;
-        border: 2px solid {BORDER} !important;
+    [data-testid="stTextInput"] [data-baseweb="input"] {
+        background: #26211C !important;
+        border: 2px solid #3A2A1C !important;
         border-radius: 4px !important;
         overflow: hidden !important;
         box-shadow: none !important;
+        outline: none !important;
         transition: border-color 0.2s, box-shadow 0.2s !important;
-    }}
-    [data-testid="stTextInput"] [data-baseweb="input"]:focus-within {{
-        border-color: {OX_D} !important;
-        box-shadow: 0 0 18px {OX_GLOW} !important;
-    }}
+    }
+    [data-testid="stTextInput"] [data-baseweb="input"]:focus-within,
+    [data-testid="stTextInput"] [data-baseweb="input"]:focus {
+        border-color: #E85520 !important;
+        box-shadow: 0 0 18px rgba(255,112,48,0.12) !important;
+        outline: none !important;
+    }
+    /* Kill every possible blue focus ring Streamlit/BaseWeb adds */
+    [data-testid="stTextInput"] * {
+        outline: none !important;
+    }
+    [data-testid="stTextInput"] *:focus,
+    [data-testid="stTextInput"] *:focus-visible,
+    [data-testid="stTextInput"] *:focus-within {
+        outline: none !important;
+        box-shadow: none !important;
+    }
 
     /* Inner wrapper — no border, no background, no radius */
     [data-testid="stTextInput"] [data-baseweb="base-input"] {{
