@@ -240,14 +240,29 @@ def main():
     [data-testid="stFileUploaderDropzone"] [data-testid="stIconMaterial"] {{
         display: none !important;
     }}
+    /* Button shell */
     [data-testid="stFileUploaderDropzone"] button {{
         background: var(--hi) !important;
         border: 1px solid var(--dim) !important;
-        border-radius: 2px !important;
+        border-radius: 3px !important;
         color: var(--text) !important;
         padding: 9px 22px !important;
         transition: all 0.15s !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
+        filter: {SOFT_SHADOW} !important;
     }}
+    /* Every div layer inside the button — force flex centering */
+    [data-testid="stFileUploaderDropzone"] button > div,
+    [data-testid="stFileUploaderDropzone"] button > div > div {{
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 100% !important;
+    }}
+    /* The <p> tag where Streamlit puts the label text */
     [data-testid="stFileUploaderDropzone"] button p {{
         font-family: var(--mono) !important;
         font-size: 13px !important;
@@ -258,6 +273,7 @@ def main():
         padding: 0 !important;
         line-height: 1 !important;
         width: 100% !important;
+        display: block !important;
     }}
     [data-testid="stFileUploaderDropzone"] button:hover {{
         border-color: var(--ox-b) !important;
