@@ -307,28 +307,20 @@ def main():
     st.html("""
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <style>
-    .aprec-logo {
-        font-family: 'Press Start 2P', monospace;
-        font-size: 30px;
-        line-height: 1.1;
-        letter-spacing: 0.05em;
-        background: linear-gradient(
-            135deg,
-            #FF8C42 0%,
-            #E8541A 18%,
-            #C23B0F 35%,
-            #8B3A0F 50%,
-            #B84A1A 65%,
-            #E06030 80%,
-            #FF6B2B 100%
-        );
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        filter: drop-shadow(4px 4px 0px rgba(60,15,0,0.9))
-                drop-shadow(7px 7px 0px rgba(30,5,0,0.5));
-        display: inline-block;
-        margin-bottom: 12px;
+    .aprec-wrap {
+        border-bottom: 1px solid #252C3A;
+        padding-bottom: 24px;
+        margin-bottom: 36px;
+    }
+    .aprec-svg-wrap {
+        display: block;
+        width: 100%;
+        margin-bottom: 14px;
+        animation: logoReveal 0.6s cubic-bezier(0.16,1,0.3,1) forwards;
+    }
+    @keyframes logoReveal {
+        from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+        to   { opacity: 1; transform: translateY(0)   scale(1); }
     }
     .aprec-sub {
         display: flex;
@@ -340,7 +332,6 @@ def main():
         font-size: 6px;
         color: #3A4255;
         letter-spacing: 0.12em;
-        text-transform: uppercase;
     }
     .aprec-tag {
         font-family: 'IBM Plex Sans', sans-serif;
@@ -350,8 +341,64 @@ def main():
         letter-spacing: 0.04em;
     }
     </style>
-    <div style="border-bottom:1px solid #252C3A;padding-bottom:24px;margin-bottom:36px;">
-        <div class="aprec-logo">AP·REC</div>
+    <div class="aprec-wrap">
+        <svg class="aprec-svg-wrap" viewBox="0 0 580 100"
+             xmlns="http://www.w3.org/2000/svg" overflow="visible">
+            <defs>
+                <linearGradient id="aprecFill" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%"   stop-color="#FFAA70"/>
+                    <stop offset="30%"  stop-color="#FF6B2B"/>
+                    <stop offset="65%"  stop-color="#D03A0A"/>
+                    <stop offset="100%" stop-color="#8B2200"/>
+                </linearGradient>
+            </defs>
+            <!-- Layer 1 — outermost / darkest shadow -->
+            <text x="4" y="82"
+                  font-family="'Press Start 2P', 'Courier New', monospace"
+                  font-size="68" letter-spacing="2"
+                  fill="none"
+                  stroke="#1A0500" stroke-width="20"
+                  stroke-linejoin="miter" stroke-miterlimit="10"
+                  paint-order="stroke fill">AP·REC</text>
+            <!-- Layer 2 -->
+            <text x="4" y="82"
+                  font-family="'Press Start 2P', 'Courier New', monospace"
+                  font-size="68" letter-spacing="2"
+                  fill="none"
+                  stroke="#4A1000" stroke-width="15"
+                  stroke-linejoin="miter" stroke-miterlimit="10"
+                  paint-order="stroke fill">AP·REC</text>
+            <!-- Layer 3 -->
+            <text x="4" y="82"
+                  font-family="'Press Start 2P', 'Courier New', monospace"
+                  font-size="68" letter-spacing="2"
+                  fill="none"
+                  stroke="#8B2800" stroke-width="10"
+                  stroke-linejoin="miter" stroke-miterlimit="10"
+                  paint-order="stroke fill">AP·REC</text>
+            <!-- Layer 4 -->
+            <text x="4" y="82"
+                  font-family="'Press Start 2P', 'Courier New', monospace"
+                  font-size="68" letter-spacing="2"
+                  fill="none"
+                  stroke="#C04010" stroke-width="6"
+                  stroke-linejoin="miter" stroke-miterlimit="10"
+                  paint-order="stroke fill">AP·REC</text>
+            <!-- Layer 5 — innermost outline -->
+            <text x="4" y="82"
+                  font-family="'Press Start 2P', 'Courier New', monospace"
+                  font-size="68" letter-spacing="2"
+                  fill="none"
+                  stroke="#E06030" stroke-width="3"
+                  stroke-linejoin="miter" stroke-miterlimit="10"
+                  paint-order="stroke fill">AP·REC</text>
+            <!-- Top layer — gradient fill -->
+            <text x="4" y="82"
+                  font-family="'Press Start 2P', 'Courier New', monospace"
+                  font-size="68" letter-spacing="2"
+                  fill="url(#aprecFill)"
+                  stroke-linejoin="miter" stroke-miterlimit="10">AP·REC</text>
+        </svg>
         <div class="aprec-sub">
             <span class="aprec-v">v5.0</span>
             <span class="aprec-tag">vendor statement reconciliation processor</span>
