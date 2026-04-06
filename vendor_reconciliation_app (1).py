@@ -307,33 +307,55 @@ def main():
     st.html("""
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <style>
-    .aprec-wrap {
+    .logo-outer {
         border-bottom: 1px solid #252C3A;
-        padding-bottom: 24px;
+        padding: 8px 0 24px 0;
         margin-bottom: 36px;
-    }
-    .aprec-svg-wrap {
-        display: block;
-        width: 100%;
-        margin-bottom: 14px;
-        animation: logoReveal 0.6s cubic-bezier(0.16,1,0.3,1) forwards;
+        animation: logoReveal 0.5s ease forwards;
     }
     @keyframes logoReveal {
-        from { opacity: 0; transform: translateY(-6px) scale(0.98); }
-        to   { opacity: 1; transform: translateY(0)   scale(1); }
+        from { opacity:0; transform:translateY(-8px); }
+        to   { opacity:1; transform:translateY(0); }
     }
-    .aprec-sub {
+    .logo-stack {
+        position: relative;
+        display: inline-block;
+        line-height: 1;
+        margin-bottom: 14px;
+        padding: 12px 4px 12px 4px;
+    }
+    .logo-stack span {
+        font-family: 'Press Start 2P', 'Courier New', Courier, monospace;
+        font-size: 58px;
+        letter-spacing: 4px;
+        white-space: nowrap;
+        display: block;
+    }
+    .logo-l1 { color:transparent; -webkit-text-fill-color:transparent; -webkit-text-stroke: 22px #180400; }
+    .logo-l2 { position:absolute;top:12px;left:4px; color:transparent; -webkit-text-fill-color:transparent; -webkit-text-stroke: 15px #4A1000; }
+    .logo-l3 { position:absolute;top:12px;left:4px; color:transparent; -webkit-text-fill-color:transparent; -webkit-text-stroke: 9px  #903010; }
+    .logo-l4 { position:absolute;top:12px;left:4px; color:transparent; -webkit-text-fill-color:transparent; -webkit-text-stroke: 5px  #D04818; }
+    .logo-l5 { position:absolute;top:12px;left:4px; color:transparent; -webkit-text-fill-color:transparent; -webkit-text-stroke: 2px  #E87040; }
+    .logo-fill {
+        position: absolute;
+        top: 12px; left: 4px;
+        background: linear-gradient(180deg, #FFA060 0%, #FF6020 35%, #D03800 70%, #8B2000 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .logo-sub {
         display: flex;
         align-items: center;
         gap: 14px;
     }
-    .aprec-v {
-        font-family: 'Press Start 2P', monospace;
-        font-size: 6px;
+    .logo-v {
+        font-family: 'Press Start 2P', 'Courier New', monospace;
+        font-size: 7px;
         color: #3A4255;
         letter-spacing: 0.12em;
     }
-    .aprec-tag {
+    .logo-tag {
         font-family: 'IBM Plex Sans', sans-serif;
         font-size: 12px;
         color: #6B7A8D;
@@ -341,67 +363,18 @@ def main():
         letter-spacing: 0.04em;
     }
     </style>
-    <div class="aprec-wrap">
-        <svg class="aprec-svg-wrap" viewBox="0 0 580 100"
-             xmlns="http://www.w3.org/2000/svg" overflow="visible">
-            <defs>
-                <linearGradient id="aprecFill" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%"   stop-color="#FFAA70"/>
-                    <stop offset="30%"  stop-color="#FF6B2B"/>
-                    <stop offset="65%"  stop-color="#D03A0A"/>
-                    <stop offset="100%" stop-color="#8B2200"/>
-                </linearGradient>
-            </defs>
-            <!-- Layer 1 — outermost / darkest shadow -->
-            <text x="4" y="82"
-                  font-family="'Press Start 2P', 'Courier New', monospace"
-                  font-size="68" letter-spacing="2"
-                  fill="none"
-                  stroke="#1A0500" stroke-width="20"
-                  stroke-linejoin="miter" stroke-miterlimit="10"
-                  paint-order="stroke fill">AP·REC</text>
-            <!-- Layer 2 -->
-            <text x="4" y="82"
-                  font-family="'Press Start 2P', 'Courier New', monospace"
-                  font-size="68" letter-spacing="2"
-                  fill="none"
-                  stroke="#4A1000" stroke-width="15"
-                  stroke-linejoin="miter" stroke-miterlimit="10"
-                  paint-order="stroke fill">AP·REC</text>
-            <!-- Layer 3 -->
-            <text x="4" y="82"
-                  font-family="'Press Start 2P', 'Courier New', monospace"
-                  font-size="68" letter-spacing="2"
-                  fill="none"
-                  stroke="#8B2800" stroke-width="10"
-                  stroke-linejoin="miter" stroke-miterlimit="10"
-                  paint-order="stroke fill">AP·REC</text>
-            <!-- Layer 4 -->
-            <text x="4" y="82"
-                  font-family="'Press Start 2P', 'Courier New', monospace"
-                  font-size="68" letter-spacing="2"
-                  fill="none"
-                  stroke="#C04010" stroke-width="6"
-                  stroke-linejoin="miter" stroke-miterlimit="10"
-                  paint-order="stroke fill">AP·REC</text>
-            <!-- Layer 5 — innermost outline -->
-            <text x="4" y="82"
-                  font-family="'Press Start 2P', 'Courier New', monospace"
-                  font-size="68" letter-spacing="2"
-                  fill="none"
-                  stroke="#E06030" stroke-width="3"
-                  stroke-linejoin="miter" stroke-miterlimit="10"
-                  paint-order="stroke fill">AP·REC</text>
-            <!-- Top layer — gradient fill -->
-            <text x="4" y="82"
-                  font-family="'Press Start 2P', 'Courier New', monospace"
-                  font-size="68" letter-spacing="2"
-                  fill="url(#aprecFill)"
-                  stroke-linejoin="miter" stroke-miterlimit="10">AP·REC</text>
-        </svg>
-        <div class="aprec-sub">
-            <span class="aprec-v">v5.0</span>
-            <span class="aprec-tag">vendor statement reconciliation processor</span>
+    <div class="logo-outer">
+        <div class="logo-stack">
+            <span class="logo-l1">AP·REC</span>
+            <span class="logo-l2">AP·REC</span>
+            <span class="logo-l3">AP·REC</span>
+            <span class="logo-l4">AP·REC</span>
+            <span class="logo-l5">AP·REC</span>
+            <span class="logo-fill">AP·REC</span>
+        </div>
+        <div class="logo-sub">
+            <span class="logo-v">v5.0</span>
+            <span class="logo-tag">vendor statement reconciliation processor</span>
         </div>
     </div>""")
 
