@@ -449,7 +449,7 @@ def main():
           70% {transform:translateY(-5px) scaleY(1.08);}
           83% {transform:translateY(3px) scaleY(0.97);}
           91% {transform:translateY(-1px) scaleY(1.01);}
-          100%{transform:translateY(0) scaleY(1);}
+          100%{opacity:1;transform:translateY(0) scaleY(1);}
         }
         </style>
         <script>
@@ -460,11 +460,13 @@ def main():
                 if(ay!==by)return by-ay;
                 return parseFloat(a.getAttribute("x"))-parseFloat(b.getAttribute("x"));
             });
-            rects.forEach(function(r){r.style.opacity="0";});
             rects.forEach(function(r,i){
-                setTimeout(function(){
-                    r.style.animation="pixelFall 0.45s cubic-bezier(0.22,1,0.36,1) forwards";
-                },60+i*24);
+                var delay=(60+i*24)+"ms";
+                r.style.animationName="pixelFall";
+                r.style.animationDuration="0.45s";
+                r.style.animationTimingFunction="cubic-bezier(0.22,1,0.36,1)";
+                r.style.animationFillMode="both";
+                r.style.animationDelay=delay;
             });
         })();
         </script>'''
