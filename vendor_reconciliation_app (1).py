@@ -795,7 +795,7 @@ def main():
     /* File uploader zone */
     [data-testid="stFileUploader"] {
         background: var(--surface) !important;
-        border: 1px dashed var(--border) !important;
+        border: 2px solid var(--border) !important;
         border-radius: 3px !important;
         padding: 4px !important;
         transition: border-color 0.2s, background 0.2s !important;
@@ -814,7 +814,7 @@ def main():
     }
     [data-testid="stFileUploaderDropzone"] button {
         background: var(--surface-hi) !important;
-        border: 1px solid var(--border) !important;
+        border: 2px solid var(--border) !important;
         border-radius: 2px !important;
         padding: 6px 16px !important;
         min-width: 110px !important;
@@ -845,7 +845,7 @@ def main():
     /* Primary / run button */
     .stButton > button {
         background: transparent !important;
-        border: 1px solid var(--teal-dim) !important;
+        border: 2px solid var(--teal-dim) !important;
         color: var(--teal) !important;
         font-family: var(--mono) !important;
         font-size: 11px !important;
@@ -998,12 +998,9 @@ def main():
         key="stmt_files", label_visibility="collapsed"
     )
     if stmt_uploads:
-        files_html = "".join(
-            f'<div style="padding:1px 0; font-family:\'JetBrains Mono\',monospace;'
-            f' font-size:12px; color:#2DD4BF;">✓&nbsp;&nbsp;{f.name}</div>'
-            for f in stmt_uploads
-        )
-        st.html(f'<div style="margin-top:8px; line-height:1.85;">{files_html}</div>')
+        n = len(stmt_uploads)
+        st.html(f'<div style="font-family:\'JetBrains Mono\',monospace; font-size:12px;'
+                f' color:#2DD4BF; margin-top:8px;">✓&nbsp;&nbsp;{n} file{"s" if n!=1 else ""} loaded</div>')
     gap(28)
 
     file_overrides = {}
@@ -1052,11 +1049,12 @@ def main():
 
         if result_bytes:
             gap(20)
+            st.html('<script>window.scrollTo({top: document.body.scrollHeight, behavior: "smooth"});</script>')
 
-            total  = len([su for su in stmt_uploads
-                          if not su.name.upper().startswith("AP_REC")])
+            # Use backend counts — guaranteed consistent with each other
             n_rec  = len(reconciled)
             n_skip = len(skipped)
+            total  = n_rec + n_skip
 
             # ── Reconciliation banner — all info in one box ──────────
             pct        = int(n_rec / total * 100) if total else 0
