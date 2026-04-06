@@ -7,6 +7,7 @@ from datetime import date, datetime
 import pandas as pd
 import pdfplumber
 import streamlit as st
+import streamlit.components.v1 as _stc
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -918,6 +919,50 @@ def main():
     ::-webkit-scrollbar-track { background: var(--bg); }
     ::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--teal-dim); }
+
+    /* Hide file thumbnail preview boxes */
+    [data-testid="stFileUploaderFileData"] > div:first-child,
+    [data-testid="stFileUploaderFileData"] img,
+    [data-testid="stFileUploaderFileData"] svg,
+    [data-testid="stFileUploaderFile"] > div:first-child > div:first-child {
+        display: none !important;
+    }
+    /* Style the delete X button on each file chip */
+    [data-testid="stFileUploaderDeleteBtn"] button {
+        background: transparent !important;
+        border: 1px solid var(--dim) !important;
+        color: var(--muted) !important;
+        border-radius: 2px !important;
+        width: 20px !important;
+        height: 20px !important;
+        padding: 0 !important;
+        font-size: 11px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        transition: all 0.15s !important;
+    }
+    [data-testid="stFileUploaderDeleteBtn"] button:hover {
+        border-color: #F87171 !important;
+        color: #F87171 !important;
+    }
+    /* Style the file name chips */
+    [data-testid="stFileUploaderFile"] {
+        background: var(--surface) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 2px !important;
+        padding: 6px 10px !important;
+    }
+    [data-testid="stFileUploaderFileName"] {
+        font-family: var(--mono) !important;
+        font-size: 11px !important;
+        color: var(--text) !important;
+    }
+    [data-testid="stFileUploaderFileSize"] {
+        font-family: var(--mono) !important;
+        font-size: 10px !important;
+        color: var(--muted) !important;
+    }
     </style>
     """)
 
@@ -1104,15 +1149,26 @@ def main():
             </div>""")
 
             gap(4)
-            st.html("""
-                <div id="results-anchor"></div>
+            _stc.html("""
                 <script>
-                    setTimeout(function() {
-                        var el = document.getElementById('results-anchor');
-                        if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
-                    }, 300);
+                    // Streamlit runs in an iframe — scroll the parent window
+                    function scrollParent() {
+                        try {
+                            window.parent.scrollTo({
+                                top: window.parent.document.body.scrollHeight,
+                                behavior: 'smooth'
+                            });
+                        } catch(e) {
+                            // fallback: scroll within iframe
+                            window.scrollTo(0, document.body.scrollHeight);
+                        }
+                    }
+                    // Try immediately, then retry after render settles
+                    scrollParent();
+                    setTimeout(scrollParent, 400);
+                    setTimeout(scrollParent, 900);
                 </script>
-            """)
+            """, height=0)
             st.download_button(
                 label="⬇   DOWNLOAD REPORT",
                 data=result_bytes,
