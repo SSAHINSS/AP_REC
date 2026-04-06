@@ -15,7 +15,7 @@ def main():
     )
 
     st.html("""
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
     <style>
     :root {
         --bg:        #1A1D21;
@@ -82,7 +82,7 @@ def main():
         font-size: 10px !important;
     }
 
-    /* Browse button — color only, no text tricks */
+    /* Browse/Upload button */
     [data-testid="stFileUploaderDropzone"] button {
         background: var(--hi) !important;
         border: 1px solid var(--dim) !important;
@@ -91,12 +91,18 @@ def main():
         font-family: var(--mono) !important;
         font-size: 11px !important;
         letter-spacing: 0.04em !important;
-        padding: 5px 14px !important;
         transition: all 0.15s !important;
     }
     [data-testid="stFileUploaderDropzone"] button:hover {
         border-color: var(--teal-b) !important;
         color: var(--teal) !important;
+    }
+    /* Hide the material icon inside the upload button — shows as duplicate text when font fails */
+    [data-testid="stFileUploaderDropzone"] button [data-testid="stIconMaterial"],
+    [data-testid="stFileUploaderDropzone"] button .material-symbols-outlined,
+    [data-testid="stFileUploaderDropzone"] button svg,
+    [data-testid="stFileUploaderDropzone"] button > span:first-child:not(:last-child) {
+        display: none !important;
     }
 
     /* File chips */
@@ -117,12 +123,8 @@ def main():
         color: var(--muted) !important;
     }
 
-    /* Hide white thumbnail box — target the icon container */
-    [data-testid="stFileUploaderFileData"] {
-        display: flex !important;
-        align-items: center !important;
-    }
-    [data-testid="stFileUploaderFileData"] > div:first-child {
+    /* Hide white thumbnail box — using Emotion stable target class e1dmul8p5 */
+    .e1dmul8p5 {
         display: none !important;
     }
 
