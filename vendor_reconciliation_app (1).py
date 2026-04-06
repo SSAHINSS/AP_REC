@@ -401,26 +401,28 @@ def main():
         box-shadow: none !important;
     }
 
-    /* ── Clear buttons ── */
-    [data-testid="stBaseButton-secondary"][data-testid*="clear"] ~ div,
-    button[kind="secondary"] { all: unset; }
-    .stButton:has(button[data-testid*="clear"]) > button,
-    .stButton:has(button[key*="clear"]) > button {
-        background: transparent !important;
+    /* ── Clear buttons — hidden Streamlit triggers, visual X injected by JS ── */
+    .ap-x-hidden { display: none !important; }
+    .ap-x-btn {
+        position: absolute !important;
+        top: 7px !important; right: 7px !important;
+        width: 18px !important; height: 18px !important;
+        background: var(--hi) !important;
         border: 1px solid var(--dim) !important;
-        color: var(--muted) !important;
-        font-family: var(--mono) !important;
-        font-size: 11px !important;
-        letter-spacing: 0.06em !important;
-        padding: 4px 12px !important;
         border-radius: 2px !important;
-        width: auto !important;
-        filter: none !important;
-        margin-top: 4px !important;
+        color: var(--muted) !important;
+        font-size: 10px !important;
+        font-family: var(--mono) !important;
+        cursor: pointer !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        z-index: 20 !important;
         transition: all 0.15s !important;
+        line-height: 1 !important;
+        padding: 0 !important;
     }
-    .stButton:has(button[data-testid*="clear"]) > button:hover,
-    .stButton:has(button[key*="clear"]) > button:hover {
+    .ap-x-btn:hover {
         border-color: #F87171 !important;
         color: #F87171 !important;
     }
@@ -526,8 +528,7 @@ def main():
                 });
             });
 
-            // X overlay button — appears when files are loaded
-            // Find hidden clear buttons and inject visual X into their uploader
+            // X overlay button — find each clear btn, walk back to its uploader
             var allBtns = Array.from(doc.querySelectorAll('button[data-testid="stBaseButton-secondary"]'));
             allBtns.forEach(function(btn) {
                 var p = btn.querySelector('p');
@@ -535,25 +536,29 @@ def main():
                 var txt = p.textContent || '';
                 if (txt.indexOf('remove file') === -1 && txt.indexOf('clear all') === -1) return;
 
-                // Hide the Streamlit button
-                var wrapper = btn.closest('.stButton') || btn.parentElement;
+                // Hide the Streamlit button wrapper
+                var wrapper = btn.closest('[data-testid="stVerticalBlock"] > div');
                 if (wrapper) wrapper.classList.add('ap-x-hidden');
 
-                // Find the nearest uploader above this button in the DOM
-                var block = btn.closest('[data-testid="stVerticalBlock"]');
-                if (!block) return;
-                var uploaders = Array.from(block.querySelectorAll('[data-testid="stFileUploader"]'));
-                var uploader = uploaders[txt.indexOf('remove file') !== -1 ? 0 : 1] || uploaders[uploaders.length - 1];
+                // Walk backwards through siblings to find the nearest uploader
+                var sib = wrapper && wrapper.previousElementSibling;
+                var uploader = null;
+                while (sib) {
+                    var u = sib.querySelector('[data-testid="stFileUploader"]');
+                    if (u) { uploader = u; break; }
+                    sib = sib.previousElementSibling;
+                }
                 if (!uploader) return;
                 if (uploader.querySelector('.ap-x-btn')) return;
 
                 uploader.style.position = 'relative';
                 var x = doc.createElement('button');
                 x.className = 'ap-x-btn';
-                x.innerHTML = '✕';
+                x.textContent = '✕';
                 x.title = 'Clear files';
                 x.addEventListener('click', function(e) {
                     e.stopPropagation();
+                    e.preventDefault();
                     btn.click();
                 });
                 uploader.appendChild(x);
