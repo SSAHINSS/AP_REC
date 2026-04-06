@@ -503,12 +503,9 @@ def main():
         <style>
         svg rect{transform-box:fill-box;transform-origin:center bottom;}
         @keyframes pixelFall{
-          0%  {opacity:0;transform:translateY(-160px) scaleY(1.4);}
-          55% {opacity:1;transform:translateY(10px) scaleY(0.75);}
-          70% {transform:translateY(-5px) scaleY(1.08);}
-          83% {transform:translateY(3px) scaleY(0.97);}
-          91% {transform:translateY(-1px) scaleY(1.01);}
-          100%{opacity:1;transform:translateY(0) scaleY(1);}
+          0%  {opacity:0;transform:translateY(-160px);}
+          80% {opacity:1;transform:translateY(2px);}
+          100%{opacity:1;transform:translateY(0);}
         }
         </style>
         <script>
