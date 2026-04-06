@@ -997,159 +997,16 @@ def main():
         accept_multiple_files=True,
         key="stmt_files", label_visibility="collapsed"
     )
-    gap(8)
-
-    # ── 03b  Filename checker with smart GL-powered dropdowns ────────────
-    VALID_LOCS = ["SH19","SH","LIB","MD","OE","PRED","OCMGT","JTS"]
-    file_overrides = {}   # fname → {"gl_vendor": str, "gl_locs": list}
-    has_bad = False
-
-    # Parse GL now if available so we can populate dropdowns
-    gl_vendors  = []   # all unique vendor names in GL
-    gl_loc_ids  = []   # all unique location IDs in GL
-    gl_loc_groups = {} # prefix → list of full IDs, e.g. "JTS" → ["JTS-98001",...]
-    if gl_upload:
-        try:
-            import pandas as _pd, io as _io
-            _gdf = _pd.read_csv(_io.BytesIO(gl_upload.getvalue()))
-            gl_vendors  = sorted(_gdf["Vendor name"].dropna().unique().tolist())
-            gl_loc_ids  = sorted(_gdf["Location ID"].dropna().unique().tolist())
-            # Group location IDs by their prefix (everything before the first '-')
-            for lid in gl_loc_ids:
-                pfx = lid.split("-")[0]
-                gl_loc_groups.setdefault(pfx, [])
-                if lid not in gl_loc_groups[pfx]:
-                    gl_loc_groups[pfx].append(lid)
-        except Exception:
-            pass
-
-    def _diagnose(fname):
-        """Return (loc, vk, loc_ok, vk_ok) for a filename."""
-        n = fname.replace(".pdf","").replace(".xlsx","").upper()
-        loc = None
-        for p in VALID_LOCS:
-            if n.startswith(p + " "):
-                loc = p; break
-        if loc is None:
-            taken = n.split()[0] if n.split() else n
-            return taken, None, False, False
-        rem = n[len(loc):].strip()
-        vk = None
-        for k in sorted(VM, key=len, reverse=True):
-            if rem.startswith(k):
-                vk = k; break
-        if vk is None:
-            taken = rem.split()[0] if rem.split() else rem
-            return loc, taken, True, False
-        return loc, vk, True, True
-
     if stmt_uploads:
-        for f in stmt_uploads:
-            loc, vk, loc_ok, vk_ok = _diagnose(f.name)
-
-            if loc_ok and vk_ok:
-                st.markdown(
-                    f'<div style="font-family:\'JetBrains Mono\',monospace; font-size:12px;'
-                    f' color:#2DD4BF; padding:2px 0;">✓&nbsp;&nbsp;{f.name}</div>',
-                    unsafe_allow_html=True)
-                continue
-
-            # ── Problem file ─────────────────────────────────────────
-            has_bad = True
-            what = []
-            if not loc_ok: what.append(f"unknown location '{loc}'")
-            if not vk_ok:  what.append(f"unknown vendor '{vk}'")
-            st.markdown(
-                f'<div style="font-family:\'JetBrains Mono\',monospace; font-size:11px;'
-                f' color:#F87171; padding:6px 0 4px 0;">✕&nbsp;&nbsp;<b>{f.name}</b>'
-                f'&nbsp;&nbsp;<span style="color:#3A4255;">← {" · ".join(what)}</span></div>',
-                unsafe_allow_html=True)
-
-            col_loc, col_vend = st.columns(2)
-            chosen_locs   = LOC.get(loc, []) if loc_ok else []
-            chosen_vendor = VM.get(vk, "")   if vk_ok  else ""
-
-            # ── Location dropdown ────────────────────────────────────
-            with col_loc:
-                st.markdown(
-                    '<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;'
-                    'color:#6B7A8D;letter-spacing:0.1em;text-transform:uppercase;'
-                    'margin-bottom:4px;">Location</div>',
-                    unsafe_allow_html=True)
-                if not loc_ok and gl_loc_groups:
-                    # Fuzzy-rank location prefixes against the unknown token
-                    ranked_pfx = _fuzzy_rank(loc, list(gl_loc_groups.keys()), n=20)
-                    loc_options = ["— select —"] + ranked_pfx
-                    sel_pfx = st.selectbox(
-                        f"loc_{f.name}", loc_options,
-                        label_visibility="collapsed",
-                        key=f"loc_{f.name}"
-                    )
-                    if sel_pfx != "— select —":
-                        chosen_locs = gl_loc_groups.get(sel_pfx, [])
-                        st.markdown(
-                            f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;'
-                            f'color:#2DD4BF;margin-top:2px;">→ {", ".join(chosen_locs)}</div>',
-                            unsafe_allow_html=True)
-                elif loc_ok:
-                    st.markdown(
-                        f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;'
-                        f'color:#2DD4BF;padding-top:6px;">✓ {loc}</div>',
-                        unsafe_allow_html=True)
-
-            # ── Vendor dropdown ──────────────────────────────────────
-            with col_vend:
-                st.markdown(
-                    '<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;'
-                    'color:#6B7A8D;letter-spacing:0.1em;text-transform:uppercase;'
-                    'margin-bottom:4px;">GL Vendor Name</div>',
-                    unsafe_allow_html=True)
-                if not vk_ok and gl_vendors:
-                    ranked_vendors = _fuzzy_rank(vk or "", gl_vendors, n=12)
-                    vend_options   = ["— select —"] + ranked_vendors
-                    sel_vendor = st.selectbox(
-                        f"vend_{f.name}", vend_options,
-                        label_visibility="collapsed",
-                        key=f"vend_{f.name}"
-                    )
-                    if sel_vendor != "— select —":
-                        chosen_vendor = sel_vendor
-                        st.markdown(
-                            f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;'
-                            f'color:#CCFF00;margin-top:4px;font-weight:600;">'
-                            f'✓ MATCHED → {sel_vendor}</div>'
-                            f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;'
-                            f'color:#6B7A8D;margin-top:2px;">generic parser will be used · '
-                            f'verify results in report</div>',
-                            unsafe_allow_html=True)
-                elif vk_ok:
-                    st.markdown(
-                        f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;'
-                        f'color:#2DD4BF;padding-top:6px;">✓ {VM.get(vk,"")}</div>',
-                        unsafe_allow_html=True)
-
-            # Only route through override path if user actually selected a vendor
-            if chosen_vendor:
-                file_overrides[f.name] = {
-                    "gl_vendor": chosen_vendor,
-                    "gl_locs":   chosen_locs,
-                }
-
-        if has_bad and not gl_upload:
-            gap(4)
-            st.markdown(
-                '<div style="font-family:\'JetBrains Mono\',monospace; font-size:11px;'
-                ' color:#F87171; padding:4px 0;">⚠ Upload the GL file first to enable smart matching.</div>',
-                unsafe_allow_html=True)
-        elif has_bad:
-            gap(4)
-            st.markdown(
-                '<div style="font-family:\'JetBrains Mono\',monospace; font-size:11px;'
-                ' color:#6B7A8D; padding:4px 0;">Unresolved files will be skipped. '
-                'A generic parser will be used for new vendors.</div>',
-                unsafe_allow_html=True)
-
+        files_html = "".join(
+            f'<div style="padding:1px 0; font-family:\'JetBrains Mono\',monospace;'
+            f' font-size:12px; color:#2DD4BF;">✓&nbsp;&nbsp;{f.name}</div>'
+            for f in stmt_uploads
+        )
+        st.html(f'<div style="margin-top:8px; line-height:1.85;">{files_html}</div>')
     gap(28)
+
+    file_overrides = {}
 
     # ── 04  Execute ──────────────────────────────────────────────────────
     section("04", "Execute")
@@ -1214,41 +1071,55 @@ def main():
             shutil.rmtree(tmpdir, ignore_errors=True)
 
         if result_bytes:
-            gap(16)
+            gap(20)
 
-            # ── Skipped files (neon pink) ─────────────────────────────
-            all_files = [su.name for su in stmt_uploads]
             total  = len([su for su in stmt_uploads
                           if not su.name.upper().startswith("AP_REC")])
             n_rec  = len(reconciled)
             n_skip = len(skipped)
 
+            # ── Big reconciliation banner ─────────────────────────────
+            pct        = int(n_rec / total * 100) if total else 0
+            bar_filled = int(pct / 5)   # 20 segments max
+            bar        = "█" * bar_filled + "░" * (20 - bar_filled)
+            banner_color = "#CCFF00" if n_skip == 0 else "#FFD700"
+            st.html(f"""
+            <div style="background:#22262D; border:2px solid {banner_color}44;
+                        border-radius:4px; padding:20px 22px; margin-bottom:14px;">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:22px;
+                            font-weight:700; color:{banner_color}; letter-spacing:-0.01em;
+                            margin-bottom:6px;">
+                    ◈ &nbsp;{n_rec} / {total} &nbsp;files reconciled
+                </div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:11px;
+                            color:{banner_color}88; letter-spacing:0.08em; margin-bottom:10px;">
+                    {bar} &nbsp;{pct}%
+                </div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:11px;
+                            color:#6B7A8D; letter-spacing:0.05em;">
+                    {"✓ all files processed" if n_skip == 0
+                      else f'<span style="color:#FF00CC;">{n_skip} file{"s" if n_skip!=1 else ""} not reconciled — see below</span>'}
+                </div>
+            </div>""")
+
+            # ── Skipped files panel (neon pink) ───────────────────────
             if skipped:
                 skip_rows = "".join(
-                    f'<div style="padding:2px 0; font-size:12px; color:#FF00CC;">'
+                    f'<div style="padding:3px 0; font-size:12px; color:#FF00CC;">'
                     f'✕&nbsp;&nbsp;{fname}&nbsp;&nbsp;'
                     f'<span style="color:#6B3A5D; font-size:11px;">— not reconciled</span></div>'
                     for fname in skipped
                 )
-                st.markdown(f"""
-                <div style="background:#22262D; border:1px solid #FF00CC44; border-radius:3px;
-                            padding:14px 16px; font-family:'JetBrains Mono',monospace;
-                            line-height:1.8; margin-bottom:12px;">
-                    <div style="font-size:10px; color:#FF00CC; letter-spacing:0.15em;
-                                text-transform:uppercase; margin-bottom:8px;">Skipped Files</div>
+                st.html(f"""
+                <div style="background:#1E1520; border:1px solid #FF00CC55;
+                            border-radius:3px; padding:14px 16px; margin-bottom:16px;">
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:10px;
+                                color:#FF00CC; letter-spacing:0.18em; text-transform:uppercase;
+                                margin-bottom:10px;">⚠ Skipped Files</div>
                     {skip_rows}
-                </div>""", unsafe_allow_html=True)
+                </div>""")
 
-            # ── Final summary line ────────────────────────────────────
-            skip_txt = (f"&nbsp;&nbsp;|&nbsp;&nbsp;"
-                        f"<span style='color:#FF00CC;'>{n_skip} skipped</span>") if n_skip else ""
-            st.markdown(f"""
-            <div style="font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600;
-                        color:#CCFF00; padding:8px 0; letter-spacing:0.05em;">
-                ◈&nbsp;&nbsp;{n_rec} of {total} files reconciled{skip_txt}
-            </div>""", unsafe_allow_html=True)
-
-            gap(12)
+            gap(4)
             st.download_button(
                 label="⬇   DOWNLOAD REPORT",
                 data=result_bytes,
