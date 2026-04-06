@@ -247,7 +247,10 @@ def main():
         transition: all 0.15s !important;
         filter: drop-shadow(3px 4px 5px rgba(10,1,0,0.65)) !important;
     }
-    [data-testid="stFileUploaderDropzone"] button p {
+    [data-testid="stFileUploaderDropzone"] button p,
+    [data-testid="stFileUploaderDropzone"] .e7msn5c23 p,
+    [data-testid="stHorizontalBlock"] button p,
+    [data-testid="stHorizontalBlock"] .e7msn5c23 p {
         font-family: var(--mono) !important;
         font-size: 13px !important;
         letter-spacing: 0.06em !important;
@@ -256,7 +259,13 @@ def main():
         margin: 0 !important;
         padding: 0 !important;
         line-height: 1 !important;
+        display: block !important;
+    }
+    /* e7msn5c23 is Tu — the inline-flex span wrapping the label p */
+    [data-testid="stFileUploaderDropzone"] .e7msn5c23,
+    [data-testid="stHorizontalBlock"] .e7msn5c23 {
         width: 100% !important;
+        justify-content: center !important;
     }
     [data-testid="stFileUploaderDropzone"] button:hover {
         border-color: var(--ox-b) !important;
