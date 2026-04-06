@@ -113,16 +113,20 @@ def main():
         font-family: var(--mono) !important;
         font-size: 11px !important;
         letter-spacing: 0.06em !important;
-        display: flex !important;
+        padding: 8px 20px 8px 20px !important;
+        height: auto !important;
+        min-height: 0 !important;
+        line-height: 1.2 !important;
+        display: inline-flex !important;
         align-items: center !important;
         justify-content: center !important;
-        text-align: center !important;
+        vertical-align: middle !important;
     }
-    [data-testid="stFileUploaderDropzone"] button p,
-    [data-testid="stFileUploaderDropzone"] button span {
-        text-align: center !important;
-        width: 100% !important;
-        display: block !important;
+    [data-testid="stFileUploaderDropzone"] button *:not([data-testid="stIconMaterial"]) {
+        line-height: 1.2 !important;
+        vertical-align: middle !important;
+        margin: 0 !important;
+        padding: 0 !important;
     }
     [data-testid="stFileUploaderDropzone"] button:hover {
         border-color: var(--teal-b) !important;
@@ -298,18 +302,58 @@ def main():
                 f'color:{color};margin-top:6px;animation:sectionIn 0.3s ease;">'
                 f'{icon}&nbsp;&nbsp;{msg}</div>')
 
-    # ── Header ────────────────────────────────────────────────────────────
+    # ── Header — pixel logo ───────────────────────────────────────────────
     st.html("""
-    <div style="border-bottom:1px solid #252C3A;padding-bottom:20px;margin-bottom:36px;">
-        <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:5px;">
-            <span style="font-family:var(--mono);font-size:21px;font-weight:700;
-                color:var(--teal);letter-spacing:-0.01em;">◈ AP·REC</span>
-            <span style="font-family:var(--mono);font-size:10px;color:var(--dim);
-                letter-spacing:0.18em;text-transform:uppercase;">v5.0</span>
-        </div>
-        <div style="font-family:var(--sans);font-size:13px;color:var(--muted);
-            font-weight:300;letter-spacing:0.02em;">
-            vendor statement reconciliation processor
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+    .aprec-logo {
+        font-family: 'Press Start 2P', monospace;
+        font-size: 30px;
+        line-height: 1.1;
+        letter-spacing: 0.05em;
+        background: linear-gradient(
+            135deg,
+            #FF8C42 0%,
+            #E8541A 18%,
+            #C23B0F 35%,
+            #8B3A0F 50%,
+            #B84A1A 65%,
+            #E06030 80%,
+            #FF6B2B 100%
+        );
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        filter: drop-shadow(4px 4px 0px rgba(60,15,0,0.9))
+                drop-shadow(7px 7px 0px rgba(30,5,0,0.5));
+        display: inline-block;
+        margin-bottom: 12px;
+    }
+    .aprec-sub {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+    }
+    .aprec-v {
+        font-family: 'Press Start 2P', monospace;
+        font-size: 6px;
+        color: #3A4255;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+    }
+    .aprec-tag {
+        font-family: 'IBM Plex Sans', sans-serif;
+        font-size: 12px;
+        color: #6B7A8D;
+        font-weight: 300;
+        letter-spacing: 0.04em;
+    }
+    </style>
+    <div style="border-bottom:1px solid #252C3A;padding-bottom:24px;margin-bottom:36px;">
+        <div class="aprec-logo">AP·REC</div>
+        <div class="aprec-sub">
+            <span class="aprec-v">v5.0</span>
+            <span class="aprec-tag">vendor statement reconciliation processor</span>
         </div>
     </div>""")
 
