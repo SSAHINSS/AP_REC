@@ -455,18 +455,22 @@ def main():
         <script>
         (function(){
             var rects=Array.from(document.querySelectorAll("svg rect"));
-            rects.sort(function(a,b){
-                var ay=parseFloat(a.getAttribute("y")),by=parseFloat(b.getAttribute("y"));
-                if(ay!==by)return by-ay;
-                return parseFloat(a.getAttribute("x"))-parseFloat(b.getAttribute("x"));
-            });
-            rects.forEach(function(r,i){
-                var delay=(60+i*24)+"ms";
+            // Find the bottom-most row y value
+            var maxY=Math.max.apply(null,rects.map(function(r){return parseFloat(r.getAttribute("y"));}));
+            var P=18; // pixel size
+            rects.forEach(function(r){
+                var y=parseFloat(r.getAttribute("y"));
+                var x=parseFloat(r.getAttribute("x"));
+                // rowIndex: 0=bottom row, increases upward
+                var rowIndex=Math.round((maxY-y)/P);
+                // Small deterministic jitter based on x so it looks like natural rain
+                var jitter=((x*7+y*3)%60)-30;
+                var delay=80+(rowIndex*90)+jitter;
                 r.style.animationName="pixelFall";
-                r.style.animationDuration="0.45s";
+                r.style.animationDuration="0.42s";
                 r.style.animationTimingFunction="cubic-bezier(0.22,1,0.36,1)";
                 r.style.animationFillMode="both";
-                r.style.animationDelay=delay;
+                r.style.animationDelay=Math.max(0,delay)+"ms";
             });
         })();
         </script>'''
