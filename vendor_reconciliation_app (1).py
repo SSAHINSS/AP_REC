@@ -424,10 +424,24 @@ def main():
         color: #F87171 !important;
         filter: none !important;
     }
+    [data-testid="stHorizontalBlock"] .stButton > button {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    [data-testid="stHorizontalBlock"] .stButton > button > div,
+    [data-testid="stHorizontalBlock"] .stButton > button > div > div {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 100% !important;
+    }
     [data-testid="stHorizontalBlock"] .stButton > button p {
         font-size: 11px !important;
         text-align: center !important;
         margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
     }
 
     /* ── Spinner ── */
