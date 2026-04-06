@@ -238,40 +238,37 @@ def main():
     [data-testid="stFileUploaderDropzone"] [data-testid="stIconMaterial"] {
         display: none !important;
     }
+    /* Upload button — nuke inner markup, inject centered label via ::after */
     [data-testid="stFileUploaderDropzone"] button {
         background: var(--hi) !important;
         border: 1px solid var(--dim) !important;
         border-radius: 2px !important;
-        color: var(--text) !important;
-        padding: 8px 20px !important;
+        padding: 0 20px !important;
+        height: 34px !important;
         transition: all 0.15s !important;
         filter: drop-shadow(3px 4px 5px rgba(10,1,0,0.65)) !important;
-    }
-    [data-testid="stFileUploaderDropzone"] button p,
-    [data-testid="stFileUploaderDropzone"] .e7msn5c23 p,
-    [data-testid="stHorizontalBlock"] button p,
-    [data-testid="stHorizontalBlock"] .e7msn5c23 p {
-        font-family: var(--mono) !important;
-        font-size: 13px !important;
-        letter-spacing: 0.06em !important;
-        color: var(--text) !important;
-        text-align: center !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        line-height: 1 !important;
-        display: block !important;
-    }
-    /* e7msn5c23 is Tu — the inline-flex span wrapping the label p */
-    [data-testid="stFileUploaderDropzone"] .e7msn5c23,
-    [data-testid="stHorizontalBlock"] .e7msn5c23 {
-        width: 100% !important;
+        display: inline-flex !important;
+        align-items: center !important;
         justify-content: center !important;
+        cursor: pointer !important;
+        position: relative !important;
+        pointer-events: auto !important;
     }
-    [data-testid="stFileUploaderDropzone"] button:hover {
-        border-color: var(--ox-b) !important;
-        filter: drop-shadow(3px 4px 5px rgba(10,1,0,0.65)) !important;
+    /* Nuke all React-rendered children, replace with ::after we control */
+    [data-testid="stFileUploaderDropzone"] button * { display: none !important; }
+    [data-testid="stFileUploaderDropzone"] button::after {
+        content: "Upload" !important;
+        font-family: "JetBrains Mono", monospace !important;
+        font-size: 13px !important;
+        letter-spacing: 0.07em !important;
+        color: var(--text) !important;
+        pointer-events: none !important;
+        display: block !important;
+        text-align: center !important;
+        width: 100% !important;
     }
-    [data-testid="stFileUploaderDropzone"] button:hover p { color: var(--ox) !important; }
+    [data-testid="stFileUploaderDropzone"] button:hover { border-color: var(--ox-b) !important; }
+    [data-testid="stFileUploaderDropzone"] button:hover::after { color: var(--ox) !important; }
 
     /* ── File chips ── */
     [data-testid="stFileChip"] {
@@ -410,48 +407,32 @@ def main():
         box-shadow: none !important;
     }
 
-    /* ── Clear X buttons (in narrow column next to note) ── */
-    .ap-x-hidden { display: none !important; }
-    .ap-x-btn { display: none !important; }
+    /* ── Clear X buttons — nuke inner markup, inject ✕ via ::after ── */
     [data-testid="stHorizontalBlock"] .stButton > button {
         background: transparent !important;
         border: 1px solid var(--dim) !important;
-        color: var(--muted) !important;
-        font-family: var(--mono) !important;
-        font-size: 11px !important;
         width: auto !important;
         min-width: 0 !important;
-        padding: 4px 8px !important;
+        padding: 4px 9px !important;
         border-radius: 2px !important;
         filter: none !important;
-        letter-spacing: 0 !important;
         margin-top: 6px !important;
         transition: all 0.15s !important;
-    }
-    [data-testid="stHorizontalBlock"] .stButton > button:hover {
-        border-color: #F87171 !important;
-        color: #F87171 !important;
-        filter: none !important;
-    }
-    [data-testid="stHorizontalBlock"] .stButton > button {
-        display: flex !important;
+        display: inline-flex !important;
         align-items: center !important;
         justify-content: center !important;
     }
-    [data-testid="stHorizontalBlock"] .stButton > button > div,
-    [data-testid="stHorizontalBlock"] .stButton > button > div > div {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        width: 100% !important;
-    }
-    [data-testid="stHorizontalBlock"] .stButton > button p {
+    [data-testid="stHorizontalBlock"] .stButton > button * { display: none !important; }
+    [data-testid="stHorizontalBlock"] .stButton > button::after {
+        content: "✕" !important;
+        font-family: "JetBrains Mono", monospace !important;
         font-size: 11px !important;
-        text-align: center !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        width: 100% !important;
+        color: var(--muted) !important;
+        pointer-events: none !important;
     }
+    [data-testid="stHorizontalBlock"] .stButton > button:hover { border-color: #F87171 !important; filter: none !important; }
+    [data-testid="stHorizontalBlock"] .stButton > button:hover::after { color: #F87171 !important; }
+
 
     /* ── Spinner ── */
     [data-testid="stSpinner"] > div { border-top-color: var(--ox) !important; }
@@ -529,71 +510,28 @@ def main():
             if (inp) inp.focus();
         }, 6400);
 
-        // ── Orange drag ring + X clear buttons ──
-        function setupUploaders() {
-            var zones = doc.querySelectorAll('[data-testid="stFileUploaderDropzone"]');
-            if (!zones.length) { setTimeout(setupUploaders, 300); return; }
-
-            // Drag ring
-            zones.forEach(function(z) {
+        // ── Orange drag ring on file uploaders ──
+        function setupDragRing() {
+            doc.querySelectorAll('[data-testid="stFileUploaderDropzone"]').forEach(function(z) {
                 if (z._apSetup) return;
                 z._apSetup = true;
                 var parent = z.closest('[data-testid="stFileUploader"]');
                 z.addEventListener('dragenter', function() {
-                    if(parent){ parent.style.borderColor='rgba(255,112,48,0.7)';
-                                parent.style.boxShadow='0 0 16px rgba(255,112,48,0.15)'; }
+                    if (parent) { parent.style.borderColor='rgba(255,112,48,0.7)';
+                                  parent.style.boxShadow='0 0 16px rgba(255,112,48,0.15)'; }
                 });
                 z.addEventListener('dragleave', function(e) {
-                    if(!z.contains(e.relatedTarget) && parent){
-                        parent.style.borderColor='';
-                        parent.style.boxShadow=''; }
+                    if (!z.contains(e.relatedTarget) && parent) {
+                        parent.style.borderColor=''; parent.style.boxShadow=''; }
                 });
                 z.addEventListener('drop', function() {
-                    if(parent){ parent.style.borderColor='';
-                                parent.style.boxShadow=''; }
+                    if (parent) { parent.style.borderColor=''; parent.style.boxShadow=''; }
                 });
-            });
-
-            // X overlay button — find each clear btn, walk back to its uploader
-            var allBtns = Array.from(doc.querySelectorAll('button[data-testid="stBaseButton-secondary"]'));
-            allBtns.forEach(function(btn) {
-                var p = btn.querySelector('p');
-                if (!p) return;
-                var txt = p.textContent || '';
-                if (txt.indexOf('remove file') === -1 && txt.indexOf('clear all') === -1) return;
-
-                // Hide the Streamlit button wrapper
-                var wrapper = btn.closest('[data-testid="stVerticalBlock"] > div');
-                if (wrapper) wrapper.classList.add('ap-x-hidden');
-
-                // Walk backwards through siblings to find the nearest uploader
-                var sib = wrapper && wrapper.previousElementSibling;
-                var uploader = null;
-                while (sib) {
-                    var u = sib.querySelector('[data-testid="stFileUploader"]');
-                    if (u) { uploader = u; break; }
-                    sib = sib.previousElementSibling;
-                }
-                if (!uploader) return;
-                if (uploader.querySelector('.ap-x-btn')) return;
-
-                uploader.style.position = 'relative';
-                var x = doc.createElement('button');
-                x.className = 'ap-x-btn';
-                x.textContent = '✕';
-                x.title = 'Clear files';
-                x.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    btn.click();
-                });
-                uploader.appendChild(x);
             });
         }
 
-        // Run on load and watch for DOM changes (files being added/removed)
-        setTimeout(setupUploaders, 800);
-        var obs = new MutationObserver(function() { setupUploaders(); });
+        setTimeout(setupDragRing, 800);
+        var obs = new MutationObserver(setupDragRing);
         setTimeout(function() {
             obs.observe(doc.body, { childList: true, subtree: true });
         }, 1000);
