@@ -184,24 +184,14 @@ def main():
     st.html(f"""
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
-    :root {{
-        --bg: {BG}; --surface: {SURFACE}; --hi: {HI};
-        --ox: {OX}; --ox-d: {OX_D}; --ox-dk: {OX_DK};
-        --ox-b: {OX_B}; --ox-glow: {OX_GLOW};
-        --text: {TEXT}; --muted: {MUTED}; --dim: {DIM};
-        --border: {BORDER}; --shadow: {SHADOW};
-        --mono: {MONO}; --sans: {SANS};
-        --soft-shadow: {SOFT_SHADOW};
-    }}
 
     /* Chrome */
     #MainMenu, footer, [data-testid="stToolbar"],
     [data-testid="stDecoration"], [data-testid="stHeader"] {{ display:none !important; }}
 
-    /* Background — hardcoded warm charcoal */
-    html, body, .stApp, [data-testid="stAppViewContainer"],
-    [data-testid="stBottom"], [data-testid="stHeader"],
-    section.main, .main, .block-container {{
+    /* Background — warm charcoal */
+    .stApp, [data-testid="stAppViewContainer"],
+    [data-testid="stBottom"] {{
         background: #1E1B17 !important;
         background-color: #1E1B17 !important;
     }}
@@ -215,30 +205,30 @@ def main():
     /* Global text */
     .stApp p, .stApp div, .stApp span,
     .stApp label, .stMarkdown {{
-        color: var(--text) !important;
-        font-family: var(--sans) !important;
+        color: #E0D0C0 !important;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif !important;
         font-size: 15px !important;
     }}
 
     /* ── File uploader ── */
     [data-testid="stFileUploader"] {{
-        background: var(--surface) !important;
-        border: 2px solid var(--border) !important;
+        background: #26211C !important;
+        border: 2px solid #3A2A1C !important;
         border-radius: 3px !important;
         transition: border-color 0.2s, filter 0.2s !important;
         filter: {SOFT_SHADOW} !important;
     }}
     [data-testid="stFileUploader"]:hover {{
-        border-color: var(--ox-b) !important;
+        border-color: rgba(255,112,48,0.38) !important;
     }}
     [data-testid="stFileUploaderDropzoneInstructions"] span {{
-        color: var(--muted) !important;
-        font-family: var(--mono) !important;
+        color: #8A7060 !important;
+        font-family: 'JetBrains Mono', 'Courier New', monospace !important;
         font-size: 14px !important;
     }}
     [data-testid="stFileUploaderDropzoneInstructions"] small {{
-        color: var(--dim) !important;
-        font-family: var(--mono) !important;
+        color: #5A4030 !important;
+        font-family: 'JetBrains Mono', 'Courier New', monospace !important;
         font-size: 12px !important;
     }}
     [data-testid="stFileUploaderDropzone"] [data-testid="stIconMaterial"] {{
@@ -246,10 +236,10 @@ def main():
     }}
     /* Button shell */
     [data-testid="stFileUploaderDropzone"] button {{
-        background: var(--hi) !important;
-        border: 1px solid var(--dim) !important;
+        background: #302820 !important;
+        border: 1px solid #5A4030 !important;
         border-radius: 3px !important;
-        color: var(--text) !important;
+        color: #E0D0C0 !important;
         padding: 9px 22px !important;
         transition: all 0.15s !important;
         display: inline-flex !important;
@@ -268,10 +258,10 @@ def main():
     }}
     /* The <p> tag where Streamlit puts the label text */
     [data-testid="stFileUploaderDropzone"] button p {{
-        font-family: var(--mono) !important;
+        font-family: 'JetBrains Mono', 'Courier New', monospace !important;
         font-size: 13px !important;
         letter-spacing: 0.06em !important;
-        color: var(--text) !important;
+        color: #E0D0C0 !important;
         text-align: center !important;
         margin: 0 !important;
         padding: 0 !important;
@@ -280,26 +270,26 @@ def main():
         display: block !important;
     }}
     [data-testid="stFileUploaderDropzone"] button:hover {{
-        border-color: var(--ox-b) !important;
+        border-color: rgba(255,112,48,0.38) !important;
     }}
     [data-testid="stFileUploaderDropzone"] button:hover p {{
-        color: var(--ox) !important;
+        color: #FF7030 !important;
     }}
     [data-testid="stFileChip"] {{
-        background: var(--hi) !important;
-        border: 1px solid var(--border) !important;
+        background: #302820 !important;
+        border: 1px solid #3A2A1C !important;
         border-radius: 2px !important;
     }}
     [data-testid="stFileChip"] > div:first-child {{ display: none !important; }}
     [data-testid="stFileChipName"] {{
-        font-family: var(--mono) !important;
+        font-family: 'JetBrains Mono', 'Courier New', monospace !important;
         font-size: 13px !important;
-        color: var(--text) !important;
+        color: #E0D0C0 !important;
     }}
     [data-testid="stFileChipDeleteBtn"] button {{
         background: transparent !important;
-        border: 1px solid var(--dim) !important;
-        color: var(--muted) !important;
+        border: 1px solid #5A4030 !important;
+        color: #8A7060 !important;
         border-radius: 2px !important;
         width: 22px !important; height: 22px !important;
         padding: 0 !important;
@@ -314,9 +304,9 @@ def main():
     /* ── Run button ── */
     .stButton > button {{
         background: transparent !important;
-        border: 2px solid var(--ox-d) !important;
-        color: var(--ox) !important;
-        font-family: var(--mono) !important;
+        border: 2px solid #E85520 !important;
+        color: #FF7030 !important;
+        font-family: 'JetBrains Mono', 'Courier New', monospace !important;
         font-size: 14px !important;
         font-weight: 600 !important;
         letter-spacing: 0.12em !important;
@@ -328,23 +318,23 @@ def main():
         filter: {SOFT_SHADOW} !important;
     }}
     .stButton > button:hover:not(:disabled) {{
-        background: var(--ox-glow) !important;
-        border-color: var(--ox) !important;
+        background: rgba(255,112,48,0.12) !important;
+        border-color: #FF7030 !important;
         filter: {SOFT_SHADOW} drop-shadow(0 0 18px {OX_GLOW}) !important;
     }}
     .stButton > button:disabled {{
-        border-color: var(--dim) !important;
-        color: var(--dim) !important;
+        border-color: #5A4030 !important;
+        color: #5A4030 !important;
         opacity: 1 !important;
         filter: none !important;
     }}
 
     /* ── Download button ── */
     [data-testid="stDownloadButton"] > button {{
-        background: var(--ox-dk) !important;
+        background: #C03808 !important;
         border: none !important;
         color: #FFF0E8 !important;
-        font-family: var(--mono) !important;
+        font-family: 'JetBrains Mono', 'Courier New', monospace !important;
         font-size: 14px !important;
         font-weight: 700 !important;
         letter-spacing: 0.12em !important;
@@ -356,7 +346,7 @@ def main():
         filter: {SOFT_SHADOW} !important;
     }}
     [data-testid="stDownloadButton"] > button:hover {{
-        background: var(--ox-d) !important;
+        background: #E85520 !important;
         filter: {SOFT_SHADOW} drop-shadow(0 0 22px {OX_GLOW}) !important;
     }}
 
@@ -439,13 +429,13 @@ def main():
     }}
 
     /* ── Spinner ── */
-    [data-testid="stSpinner"] > div {{ border-top-color: var(--ox) !important; }}
+    [data-testid="stSpinner"] > div {{ border-top-color: #FF7030 !important; }}
 
     /* ── Scrollbar ── */
     ::-webkit-scrollbar {{ width: 4px; height: 4px; }}
-    ::-webkit-scrollbar-track {{ background: var(--bg); }}
-    ::-webkit-scrollbar-thumb {{ background: var(--dim); border-radius: 2px; }}
-    ::-webkit-scrollbar-thumb:hover {{ background: var(--ox-d); }}
+    ::-webkit-scrollbar-track {{ background: #1E1B17; }}
+    ::-webkit-scrollbar-thumb {{ background: #5A4030; border-radius: 2px; }}
+    ::-webkit-scrollbar-thumb:hover {{ background: #E85520; }}
     </style>
 
     <script>
