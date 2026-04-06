@@ -1020,27 +1020,8 @@ def main():
 
     # ── Processing ───────────────────────────────────────────────────────
     if run_clicked:
-        log_lines    = []
-        log_ph       = st.empty()
         result_bytes = None
         result_fn    = None
-
-        def log(msg):
-            log_lines.append(msg)
-            rows = "".join(
-                f'<div style="padding:1px 0;">'
-                f'<span style="color:#3A4255; user-select:none;">{"&nbsp;&nbsp;" if m.startswith("  ") else "&gt;"}</span>'
-                f'&nbsp;'
-                f'<span style="color:{"#2DD4BF" if m.lower().startswith("done") else "#8A9BB0" if m.startswith("  ") else "#CDD5E0"};">'
-                f'{m.strip()}</span></div>'
-                for m in log_lines
-            )
-            log_ph.markdown(f"""
-            <div style="background:#22262D; border:1px solid #252C3A; border-radius:3px;
-                        padding:14px 16px; font-family:'JetBrains Mono',monospace; font-size:12px;
-                        line-height:1.75; max-height:300px; overflow-y:auto; margin-top:16px;">
-                {rows}
-            </div>""", unsafe_allow_html=True)
 
         tmpdir = tempfile.mkdtemp()
         try:
@@ -1057,16 +1038,15 @@ def main():
                     stmt_paths.append(sp)
 
                 result_bytes, result_fn, reconciled, skipped = run_reconciliation(
-                    gl_path, stmt_paths, log_fn=log, file_overrides=file_overrides)
+                    gl_path, stmt_paths, log_fn=None, file_overrides=file_overrides)
         except ValueError as e:
-            st.markdown(f"""<div style="font-family:'JetBrains Mono',monospace; font-size:12px;
-                color:#F87171; margin-top:12px;">✕&nbsp;&nbsp;{e}</div>""", unsafe_allow_html=True)
-            reconciled = []; skipped = []
+            st.html(f'<div style="font-family:\'JetBrains Mono\',monospace; font-size:12px;'
+                    f' color:#F87171; margin-top:12px;">✕&nbsp;&nbsp;{e}</div>')
+            reconciled = set(); skipped = []
         except Exception as e:
-            st.markdown(f"""<div style="font-family:'JetBrains Mono',monospace; font-size:12px;
-                color:#F87171; margin-top:12px;">✕&nbsp;&nbsp;unexpected error: {e}</div>""",
-                unsafe_allow_html=True)
-            reconciled = []; skipped = []
+            st.html(f'<div style="font-family:\'JetBrains Mono\',monospace; font-size:12px;'
+                    f' color:#F87171; margin-top:12px;">✕&nbsp;&nbsp;unexpected error: {e}</div>')
+            reconciled = set(); skipped = []
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -1097,8 +1077,8 @@ def main():
                 </div>
                 <div style="font-family:'JetBrains Mono',monospace; font-size:11px;
                             color:#6B7A8D; letter-spacing:0.05em;">
-                    {"✓ all files processed" if n_skip == 0
-                      else f'<span style="color:#FF00CC;">{n_skip} file{"s" if n_skip!=1 else ""} not reconciled — see below</span>'}
+                    {f'<span style="color:#CCFF00;">✓ all files processed</span>' if n_skip == 0
+                      else f'<span style="color:#FF00CC;">✕ &nbsp;{n_skip} file{"s" if n_skip!=1 else ""} not reconciled — see below</span>'}
                 </div>
             </div>""")
 
