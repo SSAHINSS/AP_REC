@@ -454,24 +454,49 @@ def main():
         </style>
         <script>
         (function(){
+            var P=18;
             var rects=Array.from(document.querySelectorAll("svg rect"));
-            // Find the bottom-most row y value
             var maxY=Math.max.apply(null,rects.map(function(r){return parseFloat(r.getAttribute("y"));}));
-            var P=18; // pixel size
+            var minY=Math.min.apply(null,rects.map(function(r){return parseFloat(r.getAttribute("y"));}));
+
+            var initDelay=1000;  // 1s pause after page load
+            var rowGap=210;      // 1.5x slower — ms between rows
+            var animDur="0.98s"; // 1.5x slower fall + bounce
+            var lastLand=0;
+
+            // Phase 1: rain falls, bottom rows first
             rects.forEach(function(r){
                 var y=parseFloat(r.getAttribute("y"));
                 var x=parseFloat(r.getAttribute("x"));
-                // rowIndex: 0=bottom row, increases upward
                 var rowIndex=Math.round((maxY-y)/P);
-                // Small deterministic jitter based on x so it looks like natural rain
                 var jitter=((x*7+y*3)%60)-30;
-                var delay=120+(rowIndex*140)+jitter;
+                var delay=initDelay+100+(rowIndex*rowGap)+jitter;
+                delay=Math.max(initDelay,delay);
+                lastLand=Math.max(lastLand,delay);
                 r.style.animationName="pixelFall";
-                r.style.animationDuration="0.65s";
+                r.style.animationDuration=animDur;
                 r.style.animationTimingFunction="cubic-bezier(0.22,1,0.36,1)";
                 r.style.animationFillMode="both";
-                r.style.animationDelay=Math.max(0,delay)+"ms";
+                r.style.animationDelay=delay+"ms";
             });
+
+            // Phase 2: after all pixels land, smoothly merge row colors
+            // into a continuous gradient — borders dissolve away
+            var mergeStart=lastLand+1050;
+
+            function lerp(a,b,t){return Math.round(a+(b-a)*t);}
+            function hex2(n){return("0"+Math.min(255,Math.max(0,n)).toString(16)).slice(-2);}
+
+            setTimeout(function(){
+                rects.forEach(function(r){
+                    var y=parseFloat(r.getAttribute("y"));
+                    var t=(y-minY)/(maxY-minY);
+                    // Interpolate #FFA868 → #BE380E smoothly by y position
+                    var col="#"+hex2(lerp(255,190,t))+hex2(lerp(168,56,t))+hex2(lerp(104,14,t));
+                    r.style.transition="fill 1.8s cubic-bezier(0.4,0,0.2,1)";
+                    r.style.fill=col;
+                });
+            },mergeStart);
         })();
         </script>'''
     )
