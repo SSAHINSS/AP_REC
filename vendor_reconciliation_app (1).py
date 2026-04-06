@@ -340,32 +340,69 @@ def main():
         filter: {SOFT_SHADOW} drop-shadow(0 0 22px {OX_GLOW}) !important;
     }}
 
-    /* ── Password input ── */
-    .stTextInput > div > div > input {{
-        background: var(--surface) !important;
-        border: 2px solid var(--border) !important;
-        border-radius: 3px !important;
-        color: var(--ox) !important;
-        font-family: var(--mono) !important;
-        font-size: 17px !important;
-        caret-color: var(--ox) !important;
-        padding: 12px 16px !important;
+    /* ── Password input — single border on outer wrapper only ── */
+
+    /* Outer container: the ONE border */
+    [data-testid="stTextInput"] [data-baseweb="input"] {{
+        background: {SURFACE} !important;
+        border: 2px solid {BORDER} !important;
+        border-radius: 4px !important;
+        overflow: hidden !important;
+        box-shadow: none !important;
         transition: border-color 0.2s, box-shadow 0.2s !important;
     }}
-    .stTextInput > div > div > input:focus {{
-        border-color: var(--ox-d) !important;
-        box-shadow: 0 0 0 1px var(--ox-d), 0 0 18px var(--ox-glow) !important;
+    [data-testid="stTextInput"] [data-baseweb="input"]:focus-within {{
+        border-color: {OX_D} !important;
+        box-shadow: 0 0 18px {OX_GLOW} !important;
+    }}
+
+    /* Inner wrapper — no border, no background, no radius */
+    [data-testid="stTextInput"] [data-baseweb="base-input"] {{
+        background: transparent !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
         outline: none !important;
     }}
-    .stTextInput > div > div > input::placeholder {{ color: var(--dim) !important; }}
-    [data-baseweb="base-input"], [data-baseweb="input"] {{
-        background: var(--surface) !important;
-        border-color: var(--border) !important;
+
+    /* The actual input element — no border */
+    [data-testid="stTextInput"] input {{
+        background: transparent !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        outline: none !important;
+        color: {OX} !important;
+        font-family: {MONO} !important;
+        font-size: 17px !important;
+        caret-color: {OX} !important;
+        padding: 13px 16px !important;
+    }}
+    [data-testid="stTextInput"] input:focus {{
+        border: none !important;
+        box-shadow: none !important;
+        outline: none !important;
+    }}
+    [data-testid="stTextInput"] input::placeholder {{ color: {DIM} !important; }}
+
+    /* Eye icon container — no border, no background */
+    [data-testid="stTextInput"] [data-baseweb="base-input"] > div {{
+        background: transparent !important;
+        border: none !important;
+        border-left: none !important;
         box-shadow: none !important;
     }}
-    [data-baseweb="base-input"]:focus-within, [data-baseweb="input"]:focus-within {{
-        border-color: var(--ox-d) !important;
-        box-shadow: 0 0 0 1px var(--ox-d), 0 0 18px var(--ox-glow) !important;
+    /* Eye icon button */
+    [data-testid="stTextInput"] button {{
+        background: transparent !important;
+        border: none !important;
+        color: {DIM} !important;
+        padding: 0 12px !important;
+        cursor: pointer !important;
+        transition: color 0.15s !important;
+    }}
+    [data-testid="stTextInput"] button:hover {{
+        color: {OX} !important;
     }}
 
     /* ── Spinner ── */
