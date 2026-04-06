@@ -401,12 +401,42 @@ def main():
 
     <script>
     (function() {
+        // Auto-focus password
         function focusPw() {
             var inp = window.parent.document.querySelector('[data-testid="stTextInput"] input');
             if (inp) inp.focus();
             else setTimeout(focusPw, 120);
         }
         setTimeout(focusPw, 400);
+
+        // Sequential page reveal after logo completes (~4.5s)
+        // Finds all content blocks below the logo and fades them in top-to-bottom
+        setTimeout(function() {
+            try {
+                var doc = window.parent.document;
+                // All element containers in the main block
+                var all = Array.from(doc.querySelectorAll(
+                    '[data-testid="stVerticalBlock"] > div'
+                ));
+                // Skip the logo component block (first child)
+                var toReveal = all.slice(1).filter(function(el) {
+                    return el.offsetHeight > 0 || el.offsetWidth > 0;
+                });
+                // Hide all first
+                toReveal.forEach(function(el) {
+                    el.style.opacity = "0";
+                    el.style.transform = "translateY(8px)";
+                });
+                // Stagger reveal
+                toReveal.forEach(function(el, i) {
+                    setTimeout(function() {
+                        el.style.transition = "opacity 0.45s ease, transform 0.45s ease";
+                        el.style.opacity = "1";
+                        el.style.transform = "translateY(0)";
+                    }, i * 160);
+                });
+            } catch(e) {}
+        }, 4600);
     })();
     </script>
     """)
@@ -480,21 +510,32 @@ def main():
                 r.style.animationDelay=delay+"ms";
             });
 
-            // Phase 2: after all pixels land, smoothly merge row colors
-            // into a continuous gradient — borders dissolve away
-            var mergeStart=lastLand+1050;
-
+            // Phase 2: SVG SMIL animate — each rect's fill dissolves to its
+            // mathematically correct smooth gradient value. SMIL is guaranteed
+            // to animate SVG fill attributes; CSS transitions are not.
+            var mergeStart=lastLand+1100;
             function lerp(a,b,t){return Math.round(a+(b-a)*t);}
             function hex2(n){return("0"+Math.min(255,Math.max(0,n)).toString(16)).slice(-2);}
+            var ns="http://www.w3.org/2000/svg";
 
             setTimeout(function(){
                 rects.forEach(function(r){
                     var y=parseFloat(r.getAttribute("y"));
                     var t=(y-minY)/(maxY-minY);
-                    // Interpolate #FFA868 → #BE380E smoothly by y position
-                    var col="#"+hex2(lerp(255,190,t))+hex2(lerp(168,56,t))+hex2(lerp(104,14,t));
-                    r.style.transition="fill 1.8s cubic-bezier(0.4,0,0.2,1)";
-                    r.style.fill=col;
+                    var from=r.getAttribute("fill");
+                    var to="#"+hex2(lerp(255,190,t))+hex2(lerp(168,56,t))+hex2(lerp(104,14,t));
+                    var anim=document.createElementNS(ns,"animate");
+                    anim.setAttribute("attributeName","fill");
+                    anim.setAttribute("from",from);
+                    anim.setAttribute("to",to);
+                    anim.setAttribute("dur","2.2s");
+                    anim.setAttribute("fill","freeze");
+                    anim.setAttribute("calcMode","spline");
+                    anim.setAttribute("keyTimes","0;1");
+                    anim.setAttribute("keySplines","0.4 0 0.2 1");
+                    anim.setAttribute("begin","indefinite");
+                    r.appendChild(anim);
+                    anim.beginElement();
                 });
             },mergeStart);
         })();
