@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { login } from '../api'
-import Logo from '../components/Logo'
+import AnimatedLogo from '../components/AnimatedLogo'
 
 export default function LoginPage({ onLogin }) {
   const [password, setPassword] = useState('')
@@ -32,7 +32,7 @@ export default function LoginPage({ onLogin }) {
       gap: 32,
       padding: 24,
     }}>
-      <Logo size={64} />
+      <AnimatedLogo width={200} />
 
       <div style={{ textAlign: 'center' }}>
         <h1 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.02em' }}>

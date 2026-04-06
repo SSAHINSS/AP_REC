@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { reconcile, downloadFile, logout } from '../api'
 import DropZone from '../components/DropZone'
-import Logo from '../components/Logo'
+import AnimatedLogo from '../components/AnimatedLogo'
 
 export default function AppPage({ onLogout }) {
   const [glFiles, setGlFiles] = useState([])
@@ -44,7 +44,7 @@ export default function AppPage({ onLogout }) {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <Logo size={40} />
+          <AnimatedLogo width={160} />
           <div>
             <h1 style={{ fontSize: 20 }}>AP Reconciliation</h1>
             <p style={{ color: 'var(--muted)', fontSize: 12, fontFamily: 'var(--mono)' }}>
