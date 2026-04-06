@@ -1,0 +1,214 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #1E1B17;
+  --surface: #26211C;
+  --hi:      #302820;
+  --border:  rgba(255,255,255,0.08);
+  --dim:     rgba(255,255,255,0.14);
+  --text:    #E8DDD0;
+  --muted:   #8C7B6A;
+  --ox:      #FF7030;
+  --ox-d:    #E85520;
+  --ox-dk:   #C03808;
+  --ox-b:    rgba(255,112,48,0.38);
+  --ox-glow: rgba(255,112,48,0.12);
+  --sans:    'IBM Plex Sans', system-ui, sans-serif;
+  --mono:    'JetBrains Mono', 'Courier New', monospace;
+  --shadow:  drop-shadow(3px 4px 5px rgba(10,1,0,0.65));
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
+
+/* ── Focus ── */
+*:focus { outline: none; }
+*:focus-visible { outline: 2px solid var(--ox-b); outline-offset: 2px; }
+
+/* ── Typography ── */
+h1, h2, h3 { font-family: var(--sans); font-weight: 600; letter-spacing: -0.02em; }
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.07em;
+  padding: 10px 24px;
+  border-radius: 2px;
+  border: 1px solid var(--dim);
+  background: var(--hi);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, filter 0.15s;
+  filter: drop-shadow(3px 4px 5px rgba(10,1,0,0.65));
+  white-space: nowrap;
+}
+.btn:hover { border-color: var(--ox-b); color: var(--ox); }
+.btn:active { filter: none; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-primary {
+  background: transparent;
+  border-color: var(--ox-b);
+  color: var(--ox);
+  width: 100%;
+  padding: 13px 24px;
+  font-size: 14px;
+}
+.btn-primary:hover { border-color: var(--ox); background: var(--ox-glow); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-icon {
+  padding: 4px 9px;
+  font-size: 11px;
+  filter: none;
+  color: var(--muted);
+  border-color: var(--dim);
+  background: transparent;
+}
+.btn-icon:hover { border-color: #F87171; color: #F87171; }
+
+/* ── Inputs ── */
+.input-wrap {
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.input-wrap:focus-within { border-color: var(--ox-b); }
+.input-wrap input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+  padding: 10px 14px;
+}
+.input-wrap input::placeholder { color: var(--muted); }
+.input-wrap button {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 0 14px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: color 0.15s;
+}
+.input-wrap button:hover { color: var(--text); }
+
+/* ── Cards / Sections ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 24px;
+}
+
+/* ── Drop zone ── */
+.dropzone {
+  border: 1.5px dashed var(--border);
+  border-radius: 4px;
+  padding: 32px 24px;
+  text-align: center;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  cursor: pointer;
+  position: relative;
+}
+.dropzone.dragging {
+  border-color: rgba(255,112,48,0.7);
+  box-shadow: 0 0 16px rgba(255,112,48,0.15);
+}
+.dropzone input[type="file"] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer;
+}
+
+/* ── File chips ── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--hi);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 3px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.chip button {
+  background: none; border: none; color: var(--muted);
+  cursor: pointer; font-size: 13px; line-height: 1;
+  padding: 0 0 0 4px;
+  transition: color 0.1s;
+}
+.chip button:hover { color: #F87171; }
+
+/* ── Log output ── */
+.log {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 16px;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.8;
+}
+.log .log-ok   { color: #86EFAC; }
+.log .log-skip { color: #FCD34D; }
+.log .log-err  { color: #F87171; }
+
+/* ── Progress bar ── */
+.progress-bar {
+  height: 2px;
+  background: var(--hi);
+  border-radius: 1px;
+  overflow: hidden;
+  margin: 12px 0;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--ox);
+  box-shadow: 0 0 8px var(--ox);
+  transition: width 0.3s ease;
+}
+
+/* ── Badge ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ox);
+  background: rgba(255,112,48,0.1);
+  border: 1px solid var(--ox-b);
+  border-radius: 2px;
+  padding: 2px 8px;
+  filter: drop-shadow(3px 4px 5px rgba(10,1,0,0.65));
+}
+.badge::before { content: '●'; font-size: 7px; }
