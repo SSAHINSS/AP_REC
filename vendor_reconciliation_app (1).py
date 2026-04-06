@@ -3,6 +3,7 @@ AP Reconciliation — Streamlit Interface v6
 """
 import os, tempfile, shutil
 import streamlit as st
+import streamlit.components.v1 as _stc
 from reconciliation_engine import run_reconciliation
 
 LOGO_SVG = """<svg width="100%" viewBox="0 0 771 176" xmlns="http://www.w3.org/2000/svg">
@@ -423,7 +424,7 @@ def main():
         })();
         </script>'''
     )
-    st.html(logo_html)
+    _stc.html(logo_html, height=220, scrolling=False)
 
     # ── 01  Access Key ────────────────────────────────────────────────────
     if not st.session_state.authenticated:
