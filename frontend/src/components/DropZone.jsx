@@ -41,17 +41,26 @@ export default function DropZone({ label, accept, multiple = false, files, onCha
           onChange={handleChange}
           style={{ display: 'none' }}
         />
+
+        {/* Clear-all X — top-right corner, only when files present */}
+        {files.length > 0 && (
+          <button
+            className="dropzone-clear"
+            type="button"
+            title="Clear all files"
+            onClick={e => { e.stopPropagation(); onChange([]) }}
+          >
+            ✕
+          </button>
+        )}
+
         <div style={{ pointerEvents: 'none' }}>
           <div style={{ fontSize: 22, marginBottom: 6, opacity: 0.5 }}>↑</div>
           <div style={{ fontSize: 13, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>
             {label}
           </div>
           <div style={{ marginTop: 12 }}>
-            <button
-              className="btn btn-browse"
-              type="button"
-              style={{ pointerEvents: 'none' }}
-            >
+            <button className="btn btn-browse" type="button" style={{ pointerEvents: 'none' }}>
               Browse
             </button>
           </div>

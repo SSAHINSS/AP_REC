@@ -239,3 +239,30 @@ h1, h2, h3 { font-family: var(--sans); font-weight: 600; letter-spacing: -0.02em
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0; }
 }
+
+/* ── Dropzone clear-all button ── */
+.dropzone-clear {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 24px;
+  height: 24px;
+  background: var(--hi);
+  border: 1px solid var(--border);
+  border-radius: 0 4px 0 6px;
+  color: var(--muted);
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  z-index: 2;
+  pointer-events: all;
+  line-height: 1;
+}
+.dropzone-clear:hover {
+  color: #F87171;
+  border-color: rgba(248,113,113,0.45);
+  background: rgba(248,113,113,0.08);
+}

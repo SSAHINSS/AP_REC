@@ -32,7 +32,13 @@ export default function LoginPage({ onLogin }) {
       gap: 32,
       padding: 24,
     }}>
-      <AnimatedLogo width={200} />
+      {/* Clickable logo — scrolls to top */}
+      <div
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        style={{ cursor: 'pointer' }}
+      >
+        <AnimatedLogo width={200} />
+      </div>
 
       <div style={{ textAlign: 'center' }}>
         <h1 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.02em' }}>
