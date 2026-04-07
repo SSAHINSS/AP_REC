@@ -266,3 +266,9 @@ h1, h2, h3 { font-family: var(--sans); font-weight: 600; letter-spacing: -0.02em
   border-color: rgba(248,113,113,0.45);
   background: rgba(248,113,113,0.08);
 }
+
+/* ── Tagline pop-up after logo ── */
+@keyframes taglinePop {
+  0%   { opacity: 0; transform: translateX(-6px); }
+  100% { opacity: 1; transform: translateX(0); }
+}

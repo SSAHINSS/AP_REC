@@ -69,7 +69,7 @@ const maxY = Math.max(...PIXELS.map(p => p[1]))
 function lerp(a,b,t){return Math.round(a+(b-a)*t)}
 function hex2(n){return('0'+Math.min(255,Math.max(0,n)).toString(16)).slice(-2)}
 
-export default function FileNamerLogo({ width = '100%' }) {
+export default function FileNamerLogo({ width = '100%', quick = false }) {
   const svgRef   = useRef(null)
   const animated = useRef(false)
 
@@ -79,6 +79,18 @@ export default function FileNamerLogo({ width = '100%' }) {
     const svg = svgRef.current
     if (!svg) return
     const rects = Array.from(svg.querySelectorAll('rect'))
+
+    // Quick mode: fast fade-in, no rain
+    if (quick) {
+      rects.forEach((r, i) => {
+        r.style.animationName = 'apQuickFade'
+        r.style.animationDuration = '0.35s'
+        r.style.animationTimingFunction = 'ease-out'
+        r.style.animationFillMode = 'both'
+        r.style.animationDelay = `${i * 1.5}ms`
+      })
+      return
+    }
     const P = 18; const initDelay = 800; const rowGap = 210; const animDur = '0.98s'
     let lastLand = 0
     rects.forEach(r => {
@@ -110,6 +122,10 @@ export default function FileNamerLogo({ width = '100%' }) {
   return (
     <>
       <style>{`
+        @keyframes apQuickFade {
+          0%   { opacity: 0; transform: translateY(-3px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
         @keyframes apPixelFall {
           0%   { opacity:0; transform:translateY(-160px); }
           80%  { opacity:1; transform:translateY(2px); }

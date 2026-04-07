@@ -58,8 +58,12 @@ function SharedHeader({ page, onLogout }) {
               userSelect: 'none',
             }}
           >
-            <AnimatedLogo width={320} />
-            <div>
+            <AnimatedLogo width={320} quick={true} />
+            <div style={{
+              animation: 'taglinePop 0.3s ease forwards',
+              animationDelay: '0.32s',
+              opacity: 0,
+            }}>
               <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)', margin: 0 }}>AP Reconciliation</p>
               <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 400, color: 'var(--muted)', margin: 0 }}>vendor statement processor</p>
             </div>
@@ -82,7 +86,7 @@ function SharedHeader({ page, onLogout }) {
               zIndex: 10, userSelect: 'none',
             }}
           >
-            <AnimatedLogo width={120} />
+            <AnimatedLogo width={120} quick={true} />
           </div>
         )}
 
@@ -100,8 +104,12 @@ function SharedHeader({ page, onLogout }) {
               userSelect: 'none',
             }}
           >
-            <FileNamerLogo width={460} />
-            <div>
+            <FileNamerLogo width={460} quick={true} />
+            <div style={{
+              animation: 'taglinePop 0.3s ease forwards',
+              animationDelay: '0.32s',
+              opacity: 0,
+            }}>
               <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)', margin: 0 }}>File Namer</p>
               <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 400, color: 'var(--muted)', margin: 0 }}>vendor file renaming</p>
             </div>
