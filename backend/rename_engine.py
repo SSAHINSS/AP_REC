@@ -76,26 +76,39 @@ def _pdf_text(fp):
         return ""
 
 def _parse_date(t):
-    """Find the earliest date in the text."""
-    dates = []
-    patterns = [
-        r'\b(\d{2}/\d{2}/\d{4})\b',
-        r'\b(\d{1,2}/\d{1,2}/\d{2})\b',
-        r'\b(\d{4}-\d{2}-\d{2})\b',
-        r'\b(\w+ \d{1,2},?\s+\d{4})\b',
-    ]
+    """
+    Find the statement date — prioritise dates that appear near statement
+    header keywords, then fall back to the LATEST date in the document
+    (which is usually the statement date, not an old transaction).
+    """
     fmts = ["%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%B %d %Y", "%B %d, %Y", "%b %d %Y", "%b %d, %Y"]
-    for pat in patterns:
+
+    def parse_one(s):
+        for fmt in fmts:
+            try:
+                return datetime.strptime(s.strip(), fmt)
+            except ValueError:
+                continue
+        return None
+
+    # Priority 1: date on the same line as "Statement" keyword (within first 500 chars)
+    header = t[:800]
+    for pat in [r'(\d{2}/\d{2}/\d{4})', r'(\d{1,2}/\d{1,2}/\d{2})']:
+        for m in re.finditer(pat, header):
+            d = parse_one(m.group(1))
+            if d:
+                return d
+
+    # Priority 2: latest date in the whole document (statement date > transaction dates)
+    dates = []
+    for pat in [r'\b(\d{2}/\d{2}/\d{4})\b', r'\b(\d{1,2}/\d{1,2}/\d{2})\b',
+                r'\b(\d{4}-\d{2}-\d{2})\b', r'\b(\w+ \d{1,2},?\s+\d{4})\b']:
         for m in re.findall(pat, t):
-            for fmt in fmts:
-                try:
-                    d = datetime.strptime(m.strip(), fmt)
-                    dates.append(d)
-                    break
-                except ValueError:
-                    continue
+            d = parse_one(m)
+            if d:
+                dates.append(d)
     if dates:
-        dates.sort()
+        dates.sort(reverse=True)  # latest date first
         return dates[0]
     return None
 
@@ -158,7 +171,7 @@ def propose_renames(file_paths, log_fn=None):
 
         # Parse date
         dt = _parse_date(text)
-        date_str = dt.strftime("%d%m%y") if dt else "UNKNOWN"
+        date_str = dt.strftime("%m%d%y") if dt else "UNKNOWN"
 
         # Get loc/vendor from filename
         loc, vk = _fi(fn)
