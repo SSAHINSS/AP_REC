@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import DropZone from '../components/DropZone'
+import AnalysingText from '../components/AnalysingText'
 
 const BASE = import.meta.env.VITE_API_URL || '/api'
 function getToken() { return localStorage.getItem('ap_token') }
@@ -80,8 +81,14 @@ export default function FileNamerPage() {
       </div>
 
       <button className="btn btn-primary" onClick={handlePropose} disabled={!files.length || running}
-        style={{ fontSize: 15, padding: '16px 24px' }}>
-        {running ? 'Analysing…' : 'Analyse Files'}
+        style={{
+          fontSize: 15,
+          padding: running ? '28px 24px' : '16px 24px',
+          position: 'relative', overflow: 'visible',
+          borderColor: running ? 'transparent' : undefined,
+          background: running ? 'transparent' : undefined,
+        }}>
+        {running ? <AnalysingText /> : 'Analyse Files'}
       </button>
 
       {error && (
