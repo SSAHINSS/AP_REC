@@ -32,10 +32,10 @@ function SlinkyText() {
       {WORD.split('').map((char, i) => {
         const phase  = i * 0.38
         const offset = i - CENTER
-        const y = Math.sin(t - phase) * 9
+        const y = Math.sin(t - phase) * 13
         // Much larger spread — almost fills button width
         const spreadWave = Math.sin(t * 0.55)
-        const x = spreadWave * offset * 22
+        const x = spreadWave * offset * 38
 
         const bright = (Math.sin(t * 0.55) + 1) / 2
         const alpha  = 0.55 + bright * 0.45
@@ -46,9 +46,9 @@ function SlinkyText() {
             transform: `translateY(${y.toFixed(2)}px) translateX(${x.toFixed(2)}px)`,
             color: `rgba(255, ${Math.round(112 + bright * 30)}, 48, ${alpha})`,
             fontFamily: 'var(--mono)',
-            fontSize: 13,
-            letterSpacing: '0.05em',
-            fontWeight: 500,
+            fontSize: 17,
+            letterSpacing: '0.04em',
+            fontWeight: 700,
             willChange: 'transform',
           }}>
             {char}
