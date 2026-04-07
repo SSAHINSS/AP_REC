@@ -63,7 +63,7 @@ VM = {
 # Fills
 HDR   = PatternFill("solid", fgColor="FF7030")   # orange header (detail sheets)
 SHDRF = PatternFill("solid", fgColor="1E1B17")   # dark header  (summary sheet)
-MATCH = PatternFill("solid", fgColor="D6EDE0"   # light green
+MATCH = PatternFill("solid", fgColor="D6EDE0")   # light green
 VAR   = PatternFill("solid", fgColor="F5EDBE")   # dark amber
 MISS  = PatternFill("solid", fgColor="F5D4D4")   # dark red
 OCR_F = PatternFill("solid", fgColor="E2DDEF")   # dark purple
