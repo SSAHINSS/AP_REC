@@ -34,7 +34,7 @@ function SlinkyText() {
         const offset     = i - CENTER
         const y          = Math.sin(t - phase) * 13
         const spreadWave = Math.sin(t * 0.55)
-        const x          = spreadWave * offset * 38
+        const x          = spreadWave * offset * 28
         const bright     = (Math.sin(t * 0.55) + 1) / 2
         const alpha      = 0.55 + bright * 0.45
         return (
@@ -217,8 +217,10 @@ export default function AppPage({ onLogout }) {
           onClick={handleRun}
           disabled={!ready}
           style={{
-            fontSize: 15, padding: '16px 24px',
-            position: 'relative', overflow: 'hidden',
+            fontSize: 15,
+            padding: running ? '28px 24px' : '16px 24px',
+            position: 'relative',
+            overflow: 'visible',
             borderColor: running ? 'transparent' : undefined,
             background: running ? 'transparent' : undefined,
           }}
