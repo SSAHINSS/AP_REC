@@ -57,14 +57,15 @@ function SlinkyText() {
 }
 
 export default function AppPage({ onLogout }) {
-  const [glFiles,      setGlFiles]      = useState([])
-  const [stmtFiles,    setStmtFiles]    = useState([])
-  const [running,      setRunning]      = useState(false)
-  const [logs,         setLogs]         = useState([])
-  const [jobId,        setJobId]        = useState(null)
-  const [error,        setError]        = useState('')
-  const [scrollY,      setScrollY]      = useState(0)
-  const [logoHovered,  setLogoHovered]  = useState(false)
+  const [glFiles,     setGlFiles]     = useState([])
+  const [stmtFiles,   setStmtFiles]   = useState([])
+  const [running,     setRunning]     = useState(false)
+  const [logs,        setLogs]        = useState([])
+  const [jobId,       setJobId]       = useState(null)
+  const [error,       setError]       = useState('')
+  const [scrollY,     setScrollY]     = useState(0)
+  const [leftHovered, setLeftHovered] = useState(false)
+  const [centHovered, setCentHovered] = useState(false)
 
   const stmtRef     = useRef(null)
   const runRef      = useRef(null)
@@ -76,19 +77,16 @@ export default function AppPage({ onLogout }) {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
-  // Auto-scroll: GL selected → statements
   useEffect(() => {
     if (glFiles.length > 0 && stmtRef.current)
       setTimeout(() => stmtRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120)
   }, [glFiles.length > 0])
 
-  // Auto-scroll: statements selected → run button
   useEffect(() => {
     if (stmtFiles.length > 0 && runRef.current)
       setTimeout(() => runRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120)
   }, [stmtFiles.length > 0])
 
-  // Auto-scroll: done → download
   useEffect(() => {
     if (jobId && downloadRef.current)
       setTimeout(() => downloadRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' }), 200)
@@ -96,13 +94,12 @@ export default function AppPage({ onLogout }) {
 
   const p = Math.min(scrollY / 120, 1)
 
-  // Left logo fades out
-  const leftOpacity = Math.max(0, 1 - p * 2.5)
-  const leftBlur    = p * 8
-
-  // Center logo fades in
+  const leftOpacity   = Math.max(0, 1 - p * 2.5)
+  const leftBlur      = p * 8
   const centerOpacity = Math.max(0, (p - 0.3) / 0.7)
   const centerBlur    = (1 - p) * 8
+
+  const scrollTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
   async function handleRun() {
     if (!glFiles[0] || !stmtFiles.length) return
@@ -129,44 +126,52 @@ export default function AppPage({ onLogout }) {
         borderBottom: `1px solid rgba(255,255,255,${p * 0.08})`,
         padding: '12px 0', marginBottom: 32,
       }}>
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', height: 60 }}>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', height: 68 }}>
 
-          {/* Left logo — pointerEvents always none so it never blocks center logo */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 14,
-            opacity: leftOpacity,
-            filter: `blur(${leftBlur}px)`,
-            transform: `scale(${1 - p * 0.04})`,
-            pointerEvents: 'none',
-            userSelect: 'none',
-          }}>
-            <AnimatedLogo width={150} />
+          {/* LEFT logo — visible at top, clickable when p < 0.5 */}
+          <div
+            onClick={scrollTop}
+            onMouseEnter={() => setLeftHovered(true)}
+            onMouseLeave={() => setLeftHovered(false)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 16,
+              opacity: leftOpacity,
+              filter: `blur(${leftBlur}px)`,
+              transform: `scale(${leftHovered ? 1.03 : 1} )`,
+              pointerEvents: p < 0.5 ? 'auto' : 'none',
+              cursor: 'pointer',
+              transition: 'transform 0.18s cubic-bezier(0.34,1.56,0.64,1)',
+              userSelect: 'none',
+            }}
+          >
+            <AnimatedLogo width={180} />
             <div>
-              <h1 style={{ fontSize: 19 }}>AP Reconciliation</h1>
-              <p style={{ color: 'var(--muted)', fontSize: 12, fontFamily: 'var(--mono)' }}>
+              <h1 style={{ fontSize: 20, fontWeight: 700 }}>AP Reconciliation</h1>
+              <p style={{ color: 'var(--muted)', fontSize: 12, fontFamily: 'var(--mono)', fontWeight: 400 }}>
                 vendor statement processor
               </p>
             </div>
           </div>
 
-          {/* Center logo — clickable, hover scale, z-index above everything */}
+          {/* CENTER logo — visible when scrolled, clickable when p > 0.5 */}
           <div
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            onMouseEnter={() => setLogoHovered(true)}
-            onMouseLeave={() => setLogoHovered(false)}
+            onClick={scrollTop}
+            onMouseEnter={() => setCentHovered(true)}
+            onMouseLeave={() => setCentHovered(false)}
             style={{
               position: 'absolute',
               left: '50%',
-              transform: `translateX(-50%) scale(${logoHovered ? 1.09 : 1})`,
+              transform: `translateX(-50%) scale(${centHovered ? 1.09 : 1})`,
               opacity: centerOpacity,
               filter: `blur(${centerBlur}px)`,
               pointerEvents: p > 0.5 ? 'auto' : 'none',
               cursor: 'pointer',
               transition: 'transform 0.2s cubic-bezier(0.34,1.56,0.64,1)',
-              zIndex: 20,
+              zIndex: 10,
+              userSelect: 'none',
             }}
           >
-            <AnimatedLogo width={110} />
+            <AnimatedLogo width={120} />
           </div>
 
           {/* Auth controls */}
@@ -186,7 +191,6 @@ export default function AppPage({ onLogout }) {
       {/* ── Content ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
 
-        {/* GL Upload */}
         <div className="card">
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ox)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>
@@ -197,7 +201,6 @@ export default function AppPage({ onLogout }) {
           <DropZone label="Drop GL CSV here" accept={['csv']} files={glFiles} onChange={setGlFiles} />
         </div>
 
-        {/* Statements Upload */}
         <div className="card" ref={stmtRef}>
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ox)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>
@@ -208,7 +211,6 @@ export default function AppPage({ onLogout }) {
           <DropZone label="Drop vendor statements here" accept={['pdf', 'xlsx']} multiple files={stmtFiles} onChange={setStmtFiles} />
         </div>
 
-        {/* Run button */}
         <button
           ref={runRef}
           className="btn btn-primary"
@@ -223,7 +225,6 @@ export default function AppPage({ onLogout }) {
           {running ? <SlinkyText /> : 'Run Reconciliation →'}
         </button>
 
-        {/* Logs */}
         {!running && logs.length > 0 && (
           <div className="card">
             <div className="log">
@@ -238,7 +239,6 @@ export default function AppPage({ onLogout }) {
           </div>
         )}
 
-        {/* Error */}
         {error && (
           <div style={{
             background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.3)',
@@ -249,7 +249,6 @@ export default function AppPage({ onLogout }) {
           </div>
         )}
 
-        {/* Download */}
         {jobId && (
           <div ref={downloadRef} style={{
             background: 'rgba(255,112,48,0.06)', border: '1px solid var(--ox-b)',
