@@ -48,7 +48,7 @@ export default function DropZone({ label, accept, multiple = false, files, onCha
           </div>
           <div style={{ marginTop: 12 }}>
             <button
-              className="btn"
+              className="btn btn-browse"
               type="button"
               style={{ pointerEvents: 'none' }}
             >

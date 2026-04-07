@@ -55,7 +55,7 @@ h1, h2, h3 { font-family: var(--sans); font-weight: 600; letter-spacing: -0.02em
   background: var(--hi);
   color: var(--text);
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, filter 0.15s;
+  transition: border-color 0.15s, color 0.15s, filter 0.15s, box-shadow 0.15s;
   filter: drop-shadow(3px 4px 5px rgba(10,1,0,0.65));
   white-space: nowrap;
 }
@@ -82,7 +82,24 @@ h1, h2, h3 { font-family: var(--sans); font-weight: 600; letter-spacing: -0.02em
   border-color: var(--dim);
   background: transparent;
 }
-.btn-icon:hover { border-color: #F87171; color: #F87171; }
+.btn-icon:hover { border-color: #F87171; color: #F87171; box-shadow: 0 0 8px rgba(248,113,113,0.15); }
+
+/* ── Browse button ── */
+.btn-browse {
+  background: transparent;
+  border-color: var(--dim);
+  color: var(--muted);
+  font-size: 12px;
+  padding: 6px 18px;
+  filter: none;
+  transition: border-color 0.15s, color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.btn-browse:hover {
+  border-color: var(--ox);
+  color: var(--ox);
+  background: var(--ox-glow);
+  box-shadow: 0 0 10px rgba(255,112,48,0.18);
+}
 
 /* ── Inputs ── */
 .input-wrap {
@@ -140,6 +157,13 @@ h1, h2, h3 { font-family: var(--sans); font-weight: 600; letter-spacing: -0.02em
 }
 .dropzone input[type="file"] {
   position: absolute; inset: 0; opacity: 0; cursor: pointer;
+}
+.dropzone:hover { border-color: rgba(255,112,48,0.3); }
+.dropzone:hover .btn-browse {
+  border-color: var(--ox);
+  color: var(--ox);
+  background: var(--ox-glow);
+  box-shadow: 0 0 10px rgba(255,112,48,0.18);
 }
 
 /* ── File chips ── */
@@ -213,7 +237,7 @@ h1, h2, h3 { font-family: var(--sans); font-weight: 600; letter-spacing: -0.02em
 }
 .badge::before { content: '●'; font-size: 7px; }
 
-/* ── Processing button animation ── */
+/* ── Button animations ── */
 @keyframes btnScan {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(200%); }
@@ -222,18 +246,4 @@ h1, h2, h3 { font-family: var(--sans); font-weight: 600; letter-spacing: -0.02em
 @keyframes blink {
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0; }
-}
-
-.btn-processing-text {
-  font-family: var(--mono);
-  letter-spacing: 0.18em;
-  font-size: 13px;
-}
-
-.btn-cursor {
-  display: inline-block;
-  margin-left: 6px;
-  animation: blink 0.9s step-end infinite;
-  font-size: 13px;
-  color: var(--ox);
 }

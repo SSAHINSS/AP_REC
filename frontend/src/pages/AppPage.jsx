@@ -1,7 +1,75 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { reconcile, downloadFile, logout } from '../api'
 import DropZone from '../components/DropZone'
 import AnimatedLogo from '../components/AnimatedLogo'
+
+const WORD = 'PROCESSING'
+const CENTER = (WORD.length - 1) / 2
+
+function SlinkyText() {
+  const [t, setT] = useState(0)
+  const rafRef = useRef(null)
+  const lastRef = useRef(null)
+
+  useEffect(() => {
+    function frame(now) {
+      if (lastRef.current !== null) {
+        const dt = (now - lastRef.current) / 1000
+        setT(prev => prev + dt * 2.2)
+      }
+      lastRef.current = now
+      rafRef.current = requestAnimationFrame(frame)
+    }
+    rafRef.current = requestAnimationFrame(frame)
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [])
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}>
+      {WORD.split('').map((char, i) => {
+        const phase  = i * 0.38
+        const offset = i - CENTER
+
+        // Vertical slinky wave
+        const y = Math.sin(t - phase) * 9
+
+        // Accordion spread: oscillates open/closed
+        const spreadWave = Math.sin(t * 0.55)
+        const x = spreadWave * offset * 4.5
+
+        // Color pulse: brighter at peak of spread
+        const bright = (Math.sin(t * 0.55) + 1) / 2
+        const alpha  = 0.55 + bright * 0.45
+
+        return (
+          <span
+            key={i}
+            style={{
+              display: 'inline-block',
+              transform: `translateY(${y.toFixed(2)}px) translateX(${x.toFixed(2)}px)`,
+              color: `rgba(255, ${Math.round(112 + bright * 30)}, 48, ${alpha})`,
+              fontFamily: 'var(--mono)',
+              fontSize: 13,
+              letterSpacing: '0.12em',
+              fontWeight: 500,
+              willChange: 'transform',
+            }}
+          >
+            {char}
+          </span>
+        )
+      })}
+      <span style={{
+        display: 'inline-block',
+        marginLeft: 6,
+        animation: 'blink 0.85s step-end infinite',
+        color: 'var(--ox)',
+        fontSize: 14,
+        lineHeight: 1,
+      }}>█</span>
+    </span>
+  )
+}
 
 export default function AppPage({ onLogout }) {
   const [glFiles, setGlFiles]     = useState([])
@@ -18,14 +86,9 @@ export default function AppPage({ onLogout }) {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
-  // p: 0 = top, 1 = fully scrolled (120px)
   const p = Math.min(scrollY / 120, 1)
-
-  // Left logo: fades + blurs out in first half
-  const leftOpacity  = Math.max(0, 1 - p * 2.5)
-  const leftBlur     = p * 8
-
-  // Center logo: blurs + fades in in second half
+  const leftOpacity   = Math.max(0, 1 - p * 2.5)
+  const leftBlur      = p * 8
   const centerOpacity = Math.max(0, (p - 0.3) / 0.7)
   const centerBlur    = (1 - p) * 8
 
@@ -72,7 +135,7 @@ export default function AppPage({ onLogout }) {
       }}>
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', height: 60 }}>
 
-          {/* Left logo — disintegrates outward on scroll */}
+          {/* Left logo — disintegrates on scroll */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -81,7 +144,6 @@ export default function AppPage({ onLogout }) {
             filter: `blur(${leftBlur}px)`,
             transform: `scale(${1 - p * 0.04})`,
             pointerEvents: p > 0.5 ? 'none' : 'auto',
-            transition: 'none',
           }}>
             <AnimatedLogo width={150} />
             <div>
@@ -92,7 +154,7 @@ export default function AppPage({ onLogout }) {
             </div>
           </div>
 
-          {/* Center logo — reassembles in the middle */}
+          {/* Center logo — reassembles at center */}
           <div style={{
             position: 'absolute',
             left: '50%',
@@ -100,12 +162,11 @@ export default function AppPage({ onLogout }) {
             opacity: centerOpacity,
             filter: `blur(${centerBlur}px)`,
             pointerEvents: p < 0.5 ? 'none' : 'auto',
-            transition: 'none',
           }}>
             <AnimatedLogo width={110} />
           </div>
 
-          {/* Auth controls — fade + shrink when logo is centered */}
+          {/* Auth controls */}
           <div style={{
             marginLeft: 'auto',
             display: 'flex',
@@ -114,7 +175,6 @@ export default function AppPage({ onLogout }) {
             opacity: Math.max(0.25, 1 - p * 0.85),
             transform: `scale(${1 - p * 0.08})`,
             transformOrigin: 'right center',
-            transition: 'none',
           }}>
             <span className="badge">Authenticated</span>
             <button className="btn btn-icon" onClick={() => { logout(); onLogout() }}>
@@ -149,40 +209,33 @@ export default function AppPage({ onLogout }) {
           <DropZone label="Drop vendor statements here" accept={['pdf', 'xlsx']} multiple files={stmtFiles} onChange={setStmtFiles} />
         </div>
 
-        {/* ── Run button / Processing indicator (ONE element) ── */}
-        <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 2 }}>
-          <button
-            className="btn btn-primary"
-            onClick={handleRun}
-            disabled={!ready}
-            style={{
-              fontSize: 15,
-              padding: '16px 24px',
-              position: 'relative',
-              overflow: 'hidden',
-              borderColor: running ? 'var(--ox)' : undefined,
-              letterSpacing: running ? '0.18em' : undefined,
-            }}
-          >
-            {/* Scanning sweep — only when running */}
-            {running && (
-              <span style={{
-                position: 'absolute',
-                inset: 0,
-                background: 'linear-gradient(90deg, transparent 0%, rgba(255,112,48,0.18) 50%, transparent 100%)',
-                animation: 'btnScan 1.6s linear infinite',
-                pointerEvents: 'none',
-              }} />
-            )}
-            {/* Pixel cursor blink */}
-            {running
-              ? <><span className="btn-processing-text">Processing</span><span className="btn-cursor">█</span></>
-              : 'Run Reconciliation →'
-            }
-          </button>
-        </div>
+        {/* ── Run / Processing button ── */}
+        <button
+          className="btn btn-primary"
+          onClick={handleRun}
+          disabled={!ready}
+          style={{
+            fontSize: 15,
+            padding: '16px 24px',
+            position: 'relative',
+            overflow: 'hidden',
+            borderColor: running ? 'var(--ox)' : undefined,
+            boxShadow: running ? '0 0 20px rgba(255,112,48,0.12), inset 0 0 20px rgba(255,112,48,0.04)' : undefined,
+          }}
+        >
+          {running && (
+            <span style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'linear-gradient(90deg, transparent 0%, rgba(255,112,48,0.10) 50%, transparent 100%)',
+              animation: 'btnScan 2s linear infinite',
+              pointerEvents: 'none',
+            }} />
+          )}
+          {running ? <SlinkyText /> : 'Run Reconciliation →'}
+        </button>
 
-        {/* Logs (shown after run completes) */}
+        {/* Logs */}
         {!running && logs.length > 0 && (
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             <div className="log">
