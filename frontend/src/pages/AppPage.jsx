@@ -3,19 +3,20 @@ import { reconcile, downloadFile, logout } from '../api'
 import DropZone from '../components/DropZone'
 import AnimatedLogo from '../components/AnimatedLogo'
 
-const WORD = 'PROCESSING'
+const WORD = 'PROCESSING...'
 const CENTER = (WORD.length - 1) / 2
 
 function SlinkyText() {
-  const [t, setT] = useState(0)
-  const rafRef = useRef(null)
+  const tRef = useRef(0)
   const lastRef = useRef(null)
+  const [, forceUpdate] = useState(0)
+  const rafRef = useRef(null)
 
   useEffect(() => {
     function frame(now) {
       if (lastRef.current !== null) {
-        const dt = (now - lastRef.current) / 1000
-        setT(prev => prev + dt * 2.2)
+        tRef.current += (now - lastRef.current) / 1000 * 2.2
+        forceUpdate(n => n + 1)
       }
       lastRef.current = now
       rafRef.current = requestAnimationFrame(frame)
@@ -24,49 +25,36 @@ function SlinkyText() {
     return () => cancelAnimationFrame(rafRef.current)
   }, [])
 
+  const t = tRef.current
+
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}>
       {WORD.split('').map((char, i) => {
         const phase  = i * 0.38
         const offset = i - CENTER
-
-        // Vertical slinky wave
         const y = Math.sin(t - phase) * 9
-
-        // Accordion spread: oscillates open/closed
+        // Much larger spread — almost fills button width
         const spreadWave = Math.sin(t * 0.55)
-        const x = spreadWave * offset * 4.5
+        const x = spreadWave * offset * 22
 
-        // Color pulse: brighter at peak of spread
         const bright = (Math.sin(t * 0.55) + 1) / 2
         const alpha  = 0.55 + bright * 0.45
 
         return (
-          <span
-            key={i}
-            style={{
-              display: 'inline-block',
-              transform: `translateY(${y.toFixed(2)}px) translateX(${x.toFixed(2)}px)`,
-              color: `rgba(255, ${Math.round(112 + bright * 30)}, 48, ${alpha})`,
-              fontFamily: 'var(--mono)',
-              fontSize: 13,
-              letterSpacing: '0.12em',
-              fontWeight: 500,
-              willChange: 'transform',
-            }}
-          >
+          <span key={i} style={{
+            display: 'inline-block',
+            transform: `translateY(${y.toFixed(2)}px) translateX(${x.toFixed(2)}px)`,
+            color: `rgba(255, ${Math.round(112 + bright * 30)}, 48, ${alpha})`,
+            fontFamily: 'var(--mono)',
+            fontSize: 13,
+            letterSpacing: '0.05em',
+            fontWeight: 500,
+            willChange: 'transform',
+          }}>
             {char}
           </span>
         )
       })}
-      <span style={{
-        display: 'inline-block',
-        marginLeft: 6,
-        animation: 'blink 0.85s step-end infinite',
-        color: 'var(--ox)',
-        fontSize: 14,
-        lineHeight: 1,
-      }}>█</span>
     </span>
   )
 }
@@ -80,11 +68,36 @@ export default function AppPage({ onLogout }) {
   const [error, setError]         = useState('')
   const [scrollY, setScrollY]     = useState(0)
 
+  const stmtRef     = useRef(null)
+  const runRef      = useRef(null)
+  const downloadRef = useRef(null)
+
   useEffect(() => {
     const onScroll = () => setScrollY(window.scrollY)
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
+
+  // Auto-scroll: GL selected → jump to statements
+  useEffect(() => {
+    if (glFiles.length > 0 && stmtRef.current) {
+      setTimeout(() => stmtRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120)
+    }
+  }, [glFiles.length > 0])
+
+  // Auto-scroll: statements selected → jump to run button
+  useEffect(() => {
+    if (stmtFiles.length > 0 && runRef.current) {
+      setTimeout(() => runRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120)
+    }
+  }, [stmtFiles.length > 0])
+
+  // Auto-scroll: done → jump to download
+  useEffect(() => {
+    if (jobId && downloadRef.current) {
+      setTimeout(() => downloadRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' }), 200)
+    }
+  }, [jobId])
 
   const p = Math.min(scrollY / 120, 1)
   const leftOpacity   = Math.max(0, 1 - p * 2.5)
@@ -134,52 +147,32 @@ export default function AppPage({ onLogout }) {
         marginBottom: 32,
       }}>
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', height: 60 }}>
-
-          {/* Left logo — disintegrates on scroll */}
           <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 14,
-            opacity: leftOpacity,
-            filter: `blur(${leftBlur}px)`,
+            display: 'flex', alignItems: 'center', gap: 14,
+            opacity: leftOpacity, filter: `blur(${leftBlur}px)`,
             transform: `scale(${1 - p * 0.04})`,
             pointerEvents: p > 0.5 ? 'none' : 'auto',
           }}>
             <AnimatedLogo width={150} />
             <div>
               <h1 style={{ fontSize: 19 }}>AP Reconciliation</h1>
-              <p style={{ color: 'var(--muted)', fontSize: 12, fontFamily: 'var(--mono)' }}>
-                vendor statement processor
-              </p>
+              <p style={{ color: 'var(--muted)', fontSize: 12, fontFamily: 'var(--mono)' }}>vendor statement processor</p>
             </div>
           </div>
-
-          {/* Center logo — reassembles at center */}
           <div style={{
-            position: 'absolute',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            opacity: centerOpacity,
-            filter: `blur(${centerBlur}px)`,
+            position: 'absolute', left: '50%', transform: 'translateX(-50%)',
+            opacity: centerOpacity, filter: `blur(${centerBlur}px)`,
             pointerEvents: p < 0.5 ? 'none' : 'auto',
           }}>
             <AnimatedLogo width={110} />
           </div>
-
-          {/* Auth controls */}
           <div style={{
-            marginLeft: 'auto',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
+            marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10,
             opacity: Math.max(0.25, 1 - p * 0.85),
-            transform: `scale(${1 - p * 0.08})`,
-            transformOrigin: 'right center',
+            transform: `scale(${1 - p * 0.08})`, transformOrigin: 'right center',
           }}>
             <span className="badge">Authenticated</span>
-            <button className="btn btn-icon" onClick={() => { logout(); onLogout() }}>
-              Sign out
-            </button>
+            <button className="btn btn-icon" onClick={() => { logout(); onLogout() }}>Sign out</button>
           </div>
         </div>
       </div>
@@ -199,7 +192,7 @@ export default function AppPage({ onLogout }) {
         </div>
 
         {/* Statements Upload */}
-        <div className="card">
+        <div className="card" ref={stmtRef}>
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ox)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>
               02 — Vendor Statements
@@ -209,8 +202,9 @@ export default function AppPage({ onLogout }) {
           <DropZone label="Drop vendor statements here" accept={['pdf', 'xlsx']} multiple files={stmtFiles} onChange={setStmtFiles} />
         </div>
 
-        {/* ── Run / Processing button ── */}
+        {/* Run button */}
         <button
+          ref={runRef}
           className="btn btn-primary"
           onClick={handleRun}
           disabled={!ready}
@@ -220,18 +214,8 @@ export default function AppPage({ onLogout }) {
             position: 'relative',
             overflow: 'hidden',
             borderColor: running ? 'var(--ox)' : undefined,
-            boxShadow: running ? '0 0 20px rgba(255,112,48,0.12), inset 0 0 20px rgba(255,112,48,0.04)' : undefined,
           }}
         >
-          {running && (
-            <span style={{
-              position: 'absolute',
-              inset: 0,
-              background: 'linear-gradient(90deg, transparent 0%, rgba(255,112,48,0.10) 50%, transparent 100%)',
-              animation: 'btnScan 2s linear infinite',
-              pointerEvents: 'none',
-            }} />
-          )}
           {running ? <SlinkyText /> : 'Run Reconciliation →'}
         </button>
 
@@ -255,11 +239,8 @@ export default function AppPage({ onLogout }) {
           <div style={{
             background: 'rgba(248,113,113,0.08)',
             border: '1px solid rgba(248,113,113,0.3)',
-            borderRadius: 4,
-            padding: '16px 20px',
-            color: '#F87171',
-            fontFamily: 'var(--mono)',
-            fontSize: 13,
+            borderRadius: 4, padding: '16px 20px',
+            color: '#F87171', fontFamily: 'var(--mono)', fontSize: 13,
           }}>
             {error}
           </div>
@@ -267,16 +248,12 @@ export default function AppPage({ onLogout }) {
 
         {/* Download */}
         {jobId && (
-          <div style={{
+          <div ref={downloadRef} style={{
             background: 'rgba(255,112,48,0.06)',
             border: '1px solid var(--ox-b)',
-            borderRadius: 4,
-            padding: '20px 24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 16,
-            flexWrap: 'wrap',
+            borderRadius: 4, padding: '20px 24px',
+            display: 'flex', alignItems: 'center',
+            justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
           }}>
             <div>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>Reconciliation complete</div>
