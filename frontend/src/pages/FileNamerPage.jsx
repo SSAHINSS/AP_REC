@@ -102,7 +102,7 @@ export default function FileNamerPage({ onLogout }) {
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 36 }}>
-        <FileNamerLogo width={260} />
+        <FileNamerLogo width={460} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span className="badge">Authenticated</span>
           <button className="btn btn-icon" onClick={() => { logout(); onLogout() }}
