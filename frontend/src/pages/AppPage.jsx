@@ -67,6 +67,7 @@ export default function AppPage({ onLogout }) {
   const [jobId, setJobId]         = useState(null)
   const [error, setError]         = useState('')
   const [scrollY, setScrollY]     = useState(0)
+  const [logoHovered, setLogoHovered] = useState(false)
 
   const stmtRef     = useRef(null)
   const runRef      = useRef(null)
