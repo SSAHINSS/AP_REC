@@ -86,13 +86,14 @@ function SharedHeader({ page, onLogout }) {
           </div>
         )}
 
-        {/* FILE-NMR: static left logo */}
+        {/* FILE-NMR: static left logo + subtitle */}
         {page === 'filenamer' && (
           <div
             onClick={scrollTop}
             onMouseEnter={() => setLeftHovered(true)}
             onMouseLeave={() => setLeftHovered(false)}
             style={{
+              display: 'flex', alignItems: 'center', gap: 16,
               transform: `scale(${leftHovered ? 1.03 : 1})`,
               cursor: 'pointer',
               transition: 'transform 0.18s cubic-bezier(0.34,1.56,0.64,1)',
@@ -100,6 +101,10 @@ function SharedHeader({ page, onLogout }) {
             }}
           >
             <FileNamerLogo width={460} />
+            <div>
+              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)', margin: 0 }}>File Namer</p>
+              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 400, color: 'var(--muted)', margin: 0 }}>vendor file renaming</p>
+            </div>
           </div>
         )}
       </div>
@@ -126,13 +131,13 @@ function SharedHeader({ page, onLogout }) {
 
 export default function App() {
   const [authed,  setAuthed]  = useState(isLoggedIn)
-  const [page,    setPage]    = useState('aprec')
+  const [page,    setPage]    = useState(() => localStorage.getItem('ap_page') || 'aprec')
   const [visible, setVisible] = useState(true)
 
   function switchPage(newPage) {
     if (newPage === page) return
     setVisible(false)
-    setTimeout(() => { setPage(newPage); setVisible(true) }, 220)
+    setTimeout(() => { setPage(newPage); localStorage.setItem('ap_page', newPage); setVisible(true) }, 220)
   }
 
   if (!authed) return <LoginPage onLogin={() => setAuthed(true)} />
