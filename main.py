@@ -12,29 +12,30 @@ from reconciliation_engine import run_reconciliation
 app = FastAPI(title="AP Reconciliation API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # lock this down to your domain in production
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# ── Auth (simple password check — swap for JWT/OAuth when selling) ─────────
+# ── Auth ───────────────────────────────────────────────────────────────────
 APP_PASSWORD = os.getenv("APP_PASSWORD", "reconcile2026")
 bearer = HTTPBearer()
 def require_auth(creds: HTTPAuthorizationCredentials = Depends(bearer)):
     if creds.credentials != APP_PASSWORD:
         raise HTTPException(status_code=401, detail="Unauthorized")
     return True
-# ── Temp file storage (use S3/GCS in production) ──────────────────────────
+# ── Temp file storage ──────────────────────────────────────────────────────
 UPLOAD_DIR = Path(tempfile.mkdtemp())
 # ── Routes ────────────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
 @app.post("/auth")
 def auth(body: dict):
-    """Exchange password for a token (token IS the password for now)."""
     if body.get("password") != APP_PASSWORD:
         raise HTTPException(status_code=401, detail="Wrong password")
     return {"token": APP_PASSWORD}
+
 @app.post("/reconcile")
 async def reconcile(
     gl_file: UploadFile = File(...),
@@ -54,9 +55,9 @@ async def reconcile(
             p = job_dir / s.filename
             p.write_bytes(await s.read())
             stmt_paths.append(str(p))
-        # Run engine
+        # Run engine — returns (bytes, filename, reconciled, skipped)
         logs = []
-        result_bytes = run_reconciliation(
+        result_bytes, output_filename, reconciled, skipped = run_reconciliation(
             str(gl_path),
             stmt_paths,
             log_fn=logs.append,
@@ -67,11 +68,13 @@ async def reconcile(
         return JSONResponse({
             "job_id": job_id,
             "logs": logs,
+            "skipped": list(skipped),
             "download_url": f"/download/{job_id}",
         })
     except Exception as e:
         shutil.rmtree(job_dir, ignore_errors=True)
         raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/download/{job_id}")
 def download(job_id: str, _: bool = Depends(require_auth)):
     out_path = UPLOAD_DIR / job_id / "AP_REC_result.xlsx"
