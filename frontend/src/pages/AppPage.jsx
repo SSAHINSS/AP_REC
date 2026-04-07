@@ -144,9 +144,9 @@ export default function AppPage({ onLogout }) {
               userSelect: 'none',
             }}
           >
-            <AnimatedLogo width={180} />
+            <AnimatedLogo width={230} />
             <div>
-              <h1 style={{ fontSize: 20, fontWeight: 700 }}>AP Reconciliation</h1>
+              <p style={{ fontSize: 12, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)' }}>AP Reconciliation</p>
               <p style={{ color: 'var(--muted)', fontSize: 12, fontFamily: 'var(--mono)', fontWeight: 400 }}>
                 vendor statement processor
               </p>
@@ -182,7 +182,7 @@ export default function AppPage({ onLogout }) {
             transformOrigin: 'right center',
           }}>
             <span className="badge">Authenticated</span>
-            <button className="btn btn-icon" onClick={() => { logout(); onLogout() }}>Sign out</button>
+            <button className="btn btn-icon" onClick={() => { logout(); onLogout() }} style={{ padding: '2px 10px', fontSize: 10, height: 'auto', lineHeight: '1.6' }}>Sign out</button>
           </div>
 
         </div>
