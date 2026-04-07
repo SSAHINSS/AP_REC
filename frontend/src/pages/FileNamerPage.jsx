@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import DropZone from '../components/DropZone'
 import AnalysingText from '../components/AnalysingText'
 
@@ -35,7 +35,8 @@ export default function FileNamerPage() {
   const [edits,     setEdits]     = useState({})
   const [jobId,     setJobId]     = useState(null)
   const [error,     setError]     = useState('')
-  const resultsRef = useRef(null)
+  const resultsRef  = useRef(null)
+  const downloadRef  = useRef(null)
 
   function updateEdit(i, field, value) { setEdits(prev => ({ ...prev, [i]: { ...prev[i], [field]: value } })) }
   function getRow(i) { const p = proposals[i]; const e = edits[i]||{}; return { entity: e.entity??p.entity, vendor: e.vendor??p.vendor, date: e.date??p.date } }
@@ -44,6 +45,13 @@ export default function FileNamerPage() {
     const { entity, vendor, date } = getRow(i)
     return `${entity}_${vendor}_${date}${ext}`.replace(/\s+/g,'_')
   }
+
+  useEffect(() => {
+    if (proposals.length > 0 && downloadRef.current) {
+      // Scroll to bottom (download button) after proposals load
+      setTimeout(() => downloadRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300)
+    }
+  }, [proposals.length])
 
   async function handlePropose() {
     if (!files.length) return

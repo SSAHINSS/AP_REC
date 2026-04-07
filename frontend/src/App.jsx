@@ -32,7 +32,7 @@ function SharedHeader({ page, onLogout }) {
     <div style={{
       position: 'sticky', top: 0, zIndex: 100,
       background: 'var(--bg)',
-      borderBottom: `1px solid rgba(255,255,255,${Math.max(p * 0.08, page === 'filenamer' ? 0.05 : 0)})`,
+      borderBottom: `1px solid rgba(255,255,255,${p * 0.08})`,
       padding: '12px 24px',
       height: 84,
       display: 'flex',

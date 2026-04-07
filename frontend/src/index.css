@@ -145,13 +145,11 @@ h1, h2, h3 { font-family: var(--sans); font-weight: 600; letter-spacing: -0.02em
   border-radius: 4px;
   padding: 32px 24px;
   text-align: center;
-  transition: border-color 0.15s, box-shadow 0.15s;
   cursor: pointer;
   position: relative;
 }
 .dropzone.dragging {
   border-color: rgba(255,112,48,0.7);
-  box-shadow: 0 0 16px rgba(255,112,48,0.15);
 }
 .dropzone input[type="file"] {
   position: absolute; inset: 0; opacity: 0; cursor: pointer;

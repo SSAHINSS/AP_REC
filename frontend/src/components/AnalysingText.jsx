@@ -73,8 +73,7 @@ export default function AnalysingText() {
             minWidth: isDot ? 10 : 16,
             textAlign: 'center',
             transition: isLocked ? 'color 0.1s' : 'none',
-            textShadow: isGlow
-              ? `0 0 16px ${LOCK_COLOR}, 0 0 32px ${LOCK_COLOR}, 0 0 48px rgba(255,112,48,0.4)`
+                          ? `0 0 16px ${LOCK_COLOR}, 0 0 32px ${LOCK_COLOR}, 0 0 48px rgba(255,112,48,0.4)`
               : isLocked
                 ? `0 0 8px rgba(255,112,48,0.3)`
                 : 'none',
