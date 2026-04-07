@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 
 const TARGET = 'RE-NAMING...'
 const GLYPHS = '!@#$%^&*?><[]{}|/\\~`0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-const LOCK_INTERVAL = 120   // ms between each letter locking in
-const SCRAMBLE_SPEED = 40   // ms between each glyph swap
+const LOCK_INTERVAL = 120
+const SCRAMBLE_SPEED = 40
 const LOCK_COLOR = '#FF7030'
 const SCRAMBLE_COLORS = ['#FF9050','#FF7A38','#EE6422','#FFA868','#FF5010','#FFB870']
 
@@ -23,7 +23,6 @@ export default function AnalysingText() {
   const lockTimers = useRef([])
 
   useEffect(() => {
-    // Scramble loop — continuously randomize unlocked letters
     function scramble() {
       setDisplay(prev => prev.map((ch, i) =>
         lockedRef.current[i] ? ch : randGlyph()
@@ -36,7 +35,6 @@ export default function AnalysingText() {
     }
     frameRef.current = setTimeout(scramble, SCRAMBLE_SPEED)
 
-    // Lock each letter one by one, left to right
     TARGET.split('').forEach((char, i) => {
       const t = setTimeout(() => {
         lockedRef.current[i] = true
@@ -44,7 +42,6 @@ export default function AnalysingText() {
         setDisplay(prev => { const n = [...prev]; n[i] = char; return n })
         setColors(prev => { const n = [...prev]; n[i] = LOCK_COLOR; return n })
         setGlowIdx(i)
-        // Kill glow after flash
         setTimeout(() => setGlowIdx(g => g === i ? -1 : g), 200)
       }, 300 + i * LOCK_INTERVAL)
       lockTimers.current.push(t)
@@ -57,7 +54,7 @@ export default function AnalysingText() {
   }, [])
 
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 0, letterSpacing: '0.08em' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 1, letterSpacing: '0.08em' }}>
       {display.map((char, i) => {
         const isLocked = locked[i]
         const isDot    = TARGET[i] === '.' || TARGET[i] === '-'
@@ -72,13 +69,8 @@ export default function AnalysingText() {
             color: colors[i],
             minWidth: isDot ? 10 : 16,
             textAlign: 'center',
-            transition: isLocked ? 'color 0.1s' : 'none',
-                          ? `0 0 16px ${LOCK_COLOR}, 0 0 32px ${LOCK_COLOR}, 0 0 48px rgba(255,112,48,0.4)`
-              : isLocked
-                ? `0 0 8px rgba(255,112,48,0.3)`
-                : 'none',
             transform: isGlow ? 'scale(1.4)' : isLocked ? 'scale(1)' : `scale(${0.85 + Math.random() * 0.3})`,
-            transition: isGlow ? 'transform 0.1s, text-shadow 0.1s' : isLocked ? 'transform 0.15s, text-shadow 0.3s' : 'none',
+            transition: isGlow ? 'transform 0.1s' : isLocked ? 'transform 0.15s' : 'none',
           }}>
             {char}
           </span>
