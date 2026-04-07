@@ -1,66 +1,53 @@
 import { useEffect, useRef } from 'react'
 
-// Identical system to AnimatedLogo.jsx: PS=19, grid step=18, same colors
+// Pixel size 19, grid 18 — identical to AnimatedLogo (AP_REC)
 const PIXELS = [
   // F
   [16,16,"#FFA868"],[34,16,"#FFA868"],[52,16,"#FFA868"],[70,16,"#FFA868"],[88,16,"#FFA868"],
   [16,34,"#FF9050"],
   [16,52,"#FF7A38"],[34,52,"#FF7A38"],[52,52,"#FF7A38"],[70,52,"#FF7A38"],
-  [16,70,"#EE6422"],
-  [16,88,"#DC5418"],
-  [16,106,"#CC4412"],
-  [16,124,"#BE380E"],
+  [16,70,"#EE6422"],[16,88,"#DC5418"],[16,106,"#CC4412"],[16,124,"#BE380E"],
   // I
-  [124,16,"#FFA868"],[142,16,"#FFA868"],[160,16,"#FFA868"],
-  [142,34,"#FF9050"],
-  [142,52,"#FF7A38"],
-  [142,70,"#EE6422"],
-  [142,88,"#DC5418"],
-  [142,106,"#CC4412"],
-  [124,124,"#BE380E"],[142,124,"#BE380E"],[160,124,"#BE380E"],
+  [125,16,"#FFA868"],[143,16,"#FFA868"],[161,16,"#FFA868"],
+  [143,34,"#FF9050"],[143,52,"#FF7A38"],[143,70,"#EE6422"],[143,88,"#DC5418"],[143,106,"#CC4412"],
+  [125,124,"#BE380E"],[143,124,"#BE380E"],[161,124,"#BE380E"],
   // L
-  [196,16,"#FFA868"],
-  [196,34,"#FF9050"],
-  [196,52,"#FF7A38"],
-  [196,70,"#EE6422"],
-  [196,88,"#DC5418"],
-  [196,106,"#CC4412"],
-  [196,124,"#BE380E"],[214,124,"#BE380E"],[232,124,"#BE380E"],[250,124,"#BE380E"],[268,124,"#BE380E"],
+  [198,16,"#FFA868"],[198,34,"#FF9050"],[198,52,"#FF7A38"],[198,70,"#EE6422"],
+  [198,88,"#DC5418"],[198,106,"#CC4412"],
+  [198,124,"#BE380E"],[216,124,"#BE380E"],[234,124,"#BE380E"],[252,124,"#BE380E"],[270,124,"#BE380E"],
   // E
-  [304,16,"#FFA868"],[322,16,"#FFA868"],[340,16,"#FFA868"],[358,16,"#FFA868"],[376,16,"#FFA868"],[394,16,"#FFA868"],
-  [304,34,"#FF9050"],
-  [304,52,"#FF7A38"],[322,52,"#FF7A38"],[340,52,"#FF7A38"],[358,52,"#FF7A38"],[376,52,"#FF7A38"],
-  [304,70,"#EE6422"],
-  [304,88,"#DC5418"],
-  [304,106,"#CC4412"],
-  [304,124,"#BE380E"],[322,124,"#BE380E"],[340,124,"#BE380E"],[358,124,"#BE380E"],[376,124,"#BE380E"],[394,124,"#BE380E"],
-  // _ (underscore — bottom 2 rows)
-  [448,106,"#CC4412"],[466,106,"#CC4412"],[484,106,"#CC4412"],[502,106,"#CC4412"],
-  [448,124,"#BE380E"],[466,124,"#BE380E"],[484,124,"#BE380E"],[502,124,"#BE380E"],
+  [307,16,"#FFA868"],[325,16,"#FFA868"],[343,16,"#FFA868"],[361,16,"#FFA868"],[379,16,"#FFA868"],
+  [307,34,"#FF9050"],
+  [307,52,"#FF7A38"],[325,52,"#FF7A38"],[343,52,"#FF7A38"],[361,52,"#FF7A38"],
+  [307,70,"#EE6422"],[307,88,"#DC5418"],[307,106,"#CC4412"],
+  [307,124,"#BE380E"],[325,124,"#BE380E"],[343,124,"#BE380E"],[361,124,"#BE380E"],[379,124,"#BE380E"],
+  // _ (underscore — rows 5 and 6 only)
+  [416,106,"#CC4412"],[434,106,"#CC4412"],[452,106,"#CC4412"],[470,106,"#CC4412"],
+  [416,124,"#BE380E"],[434,124,"#BE380E"],[452,124,"#BE380E"],[470,124,"#BE380E"],
   // N
-  [538,16,"#FFA868"],[610,16,"#FFA868"],
-  [538,34,"#FF9050"],[556,34,"#FF9050"],[610,34,"#FF9050"],
-  [538,52,"#FF7A38"],[574,52,"#FF7A38"],[610,52,"#FF7A38"],
-  [538,70,"#EE6422"],[592,70,"#EE6422"],[610,70,"#EE6422"],
-  [538,88,"#DC5418"],[610,88,"#DC5418"],
-  [538,106,"#CC4412"],[610,106,"#CC4412"],
-  [538,124,"#BE380E"],[610,124,"#BE380E"],
+  [507,16,"#FFA868"],[579,16,"#FFA868"],
+  [507,34,"#FF9050"],[525,34,"#FF9050"],[579,34,"#FF9050"],
+  [507,52,"#FF7A38"],[543,52,"#FF7A38"],[579,52,"#FF7A38"],
+  [507,70,"#EE6422"],[561,70,"#EE6422"],[579,70,"#EE6422"],
+  [507,88,"#DC5418"],[579,88,"#DC5418"],
+  [507,106,"#CC4412"],[579,106,"#CC4412"],
+  [507,124,"#BE380E"],[579,124,"#BE380E"],
   // M
-  [646,16,"#FFA868"],[754,16,"#FFA868"],
-  [646,34,"#FF9050"],[664,34,"#FF9050"],[736,34,"#FF9050"],[754,34,"#FF9050"],
-  [646,52,"#FF7A38"],[682,52,"#FF7A38"],[718,52,"#FF7A38"],[754,52,"#FF7A38"],
-  [646,70,"#EE6422"],[700,70,"#EE6422"],[754,70,"#EE6422"],
-  [646,88,"#DC5418"],[754,88,"#DC5418"],
-  [646,106,"#CC4412"],[754,106,"#CC4412"],
-  [646,124,"#BE380E"],[754,124,"#BE380E"],
+  [616,16,"#FFA868"],[706,16,"#FFA868"],
+  [616,34,"#FF9050"],[634,34,"#FF9050"],[688,34,"#FF9050"],[706,34,"#FF9050"],
+  [616,52,"#FF7A38"],[652,52,"#FF7A38"],[670,52,"#FF7A38"],[706,52,"#FF7A38"],
+  [616,70,"#EE6422"],[706,70,"#EE6422"],
+  [616,88,"#DC5418"],[706,88,"#DC5418"],
+  [616,106,"#CC4412"],[706,106,"#CC4412"],
+  [616,124,"#BE380E"],[706,124,"#BE380E"],
   // R
-  [790,16,"#FFA868"],[808,16,"#FFA868"],[826,16,"#FFA868"],[844,16,"#FFA868"],[862,16,"#FFA868"],
-  [790,34,"#FF9050"],[808,34,"#FF9050"],[862,34,"#FF9050"],[880,34,"#FF9050"],
-  [790,52,"#FF7A38"],[808,52,"#FF7A38"],[862,52,"#FF7A38"],[880,52,"#FF7A38"],
-  [790,70,"#EE6422"],[808,70,"#EE6422"],[826,70,"#EE6422"],[844,70,"#EE6422"],[862,70,"#EE6422"],
-  [790,88,"#DC5418"],[808,88,"#DC5418"],[826,88,"#DC5418"],[844,88,"#DC5418"],
-  [790,106,"#CC4412"],[808,106,"#CC4412"],[844,106,"#CC4412"],[862,106,"#CC4412"],
-  [790,124,"#BE380E"],[808,124,"#BE380E"],[862,124,"#BE380E"],[880,124,"#BE380E"],
+  [743,16,"#FFA868"],[761,16,"#FFA868"],[779,16,"#FFA868"],[797,16,"#FFA868"],[815,16,"#FFA868"],
+  [743,34,"#FF9050"],[761,34,"#FF9050"],[815,34,"#FF9050"],[833,34,"#FF9050"],
+  [743,52,"#FF7A38"],[761,52,"#FF7A38"],[815,52,"#FF7A38"],[833,52,"#FF7A38"],
+  [743,70,"#EE6422"],[761,70,"#EE6422"],[779,70,"#EE6422"],[797,70,"#EE6422"],[815,70,"#EE6422"],
+  [743,88,"#DC5418"],[761,88,"#DC5418"],[779,88,"#DC5418"],[797,88,"#DC5418"],
+  [743,106,"#CC4412"],[761,106,"#CC4412"],[797,106,"#CC4412"],[815,106,"#CC4412"],
+  [743,124,"#BE380E"],[761,124,"#BE380E"],[815,124,"#BE380E"],[833,124,"#BE380E"],
 ]
 
 const minY = Math.min(...PIXELS.map(p => p[1]))
@@ -70,7 +57,7 @@ function lerp(a, b, t) { return Math.round(a + (b - a) * t) }
 function hex2(n) { return ('0' + Math.min(255, Math.max(0, n)).toString(16)).slice(-2) }
 
 export default function FileNamerLogo({ width = '100%' }) {
-  const svgRef  = useRef(null)
+  const svgRef   = useRef(null)
   const animated = useRef(false)
 
   useEffect(() => {
@@ -78,36 +65,38 @@ export default function FileNamerLogo({ width = '100%' }) {
     animated.current = true
     const svg = svgRef.current
     if (!svg) return
-    const rects = Array.from(svg.querySelectorAll('rect'))
-    const P = 18
+
+    const rects     = Array.from(svg.querySelectorAll('rect'))
+    const P         = 18
     const initDelay = 800
     const rowGap    = 210
     const animDur   = '0.98s'
-    let lastLand = 0
+    let lastLand    = 0
 
     rects.forEach(r => {
-      const y = parseFloat(r.getAttribute('y'))
-      const x = parseFloat(r.getAttribute('x'))
+      const y        = parseFloat(r.getAttribute('y'))
+      const x        = parseFloat(r.getAttribute('x'))
       const rowIndex = Math.round((maxY - y) / P)
-      const jitter = ((x * 7 + y * 3) % 60) - 30
-      let delay = initDelay + 100 + rowIndex * rowGap + jitter
-      delay = Math.max(initDelay, delay)
-      lastLand = Math.max(lastLand, delay)
-      r.style.animationName = 'apPixelFall'
-      r.style.animationDuration = animDur
+      const jitter   = ((x * 7 + y * 3) % 60) - 30
+      let delay      = initDelay + 100 + rowIndex * rowGap + jitter
+      delay          = Math.max(initDelay, delay)
+      lastLand       = Math.max(lastLand, delay)
+      r.style.animationName           = 'apPixelFall'
+      r.style.animationDuration       = animDur
       r.style.animationTimingFunction = 'cubic-bezier(0.22,1,0.36,1)'
-      r.style.animationFillMode = 'both'
-      r.style.animationDelay = delay + 'ms'
+      r.style.animationFillMode       = 'both'
+      r.style.animationDelay          = delay + 'ms'
     })
 
     const mergeStart = lastLand + 1100
     const ns = 'http://www.w3.org/2000/svg'
+
     setTimeout(() => {
       rects.forEach(r => {
-        const y = parseFloat(r.getAttribute('y'))
-        const t = (y - minY) / (maxY - minY)
+        const y    = parseFloat(r.getAttribute('y'))
+        const t    = (y - minY) / (maxY - minY)
         const from = r.getAttribute('fill')
-        const to = '#' + hex2(lerp(255,190,t)) + hex2(lerp(168,56,t)) + hex2(lerp(104,14,t))
+        const to   = '#' + hex2(lerp(255,190,t)) + hex2(lerp(168,56,t)) + hex2(lerp(104,14,t))
         const anim = document.createElementNS(ns, 'animate')
         anim.setAttribute('attributeName', 'fill')
         anim.setAttribute('from', from)
@@ -132,15 +121,12 @@ export default function FileNamerLogo({ width = '100%' }) {
           80%  { opacity: 1; transform: translateY(2px); }
           100% { opacity: 1; transform: translateY(0); }
         }
-        .fnmr-rect {
-          transform-box: fill-box;
-          transform-origin: center bottom;
-        }
+        .fnmr-rect { transform-box: fill-box; transform-origin: center bottom; }
       `}</style>
       <svg
         ref={svgRef}
         width={width}
-        viewBox="0 0 915 158"
+        viewBox="0 0 868 158"
         xmlns="http://www.w3.org/2000/svg"
         shapeRendering="crispEdges"
       >
@@ -152,13 +138,7 @@ export default function FileNamerLogo({ width = '100%' }) {
         </defs>
         <g filter="url(#fnmr-ds)">
           {PIXELS.map(([x, y, fill], i) => (
-            <rect
-              key={i}
-              className="fnmr-rect"
-              x={x} y={y}
-              width={19} height={19}
-              fill={fill}
-            />
+            <rect key={i} className="fnmr-rect" x={x} y={y} width={19} height={19} fill={fill} />
           ))}
         </g>
       </svg>
