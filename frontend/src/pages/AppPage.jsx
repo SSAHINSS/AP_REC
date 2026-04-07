@@ -79,7 +79,7 @@ export default function AppPage({ onLogout }) {
 
   useEffect(() => {
     if (glFiles.length > 0 && stmtRef.current)
-      setTimeout(() => stmtRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120)
+      setTimeout(() => stmtRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 120)
   }, [glFiles.length > 0])
 
   useEffect(() => {
