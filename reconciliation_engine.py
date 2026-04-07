@@ -63,12 +63,12 @@ VM = {
 # Fills
 HDR   = PatternFill("solid", fgColor="FF7030")   # orange header (detail sheets)
 SHDRF = PatternFill("solid", fgColor="1E1B17")   # dark header  (summary sheet)
-MATCH = PatternFill("solid", fgColor="1A2B1F")   # dark green
-VAR   = PatternFill("solid", fgColor="2B2510")   # dark amber
-MISS  = PatternFill("solid", fgColor="2B1515")   # dark red
-OCR_F = PatternFill("solid", fgColor="1E1B2E")   # dark purple
-STRIPE= PatternFill("solid", fgColor="26211C")   # surface
-ALT   = PatternFill("solid", fgColor="302820")   # hi (alternating row)
+MATCH = PatternFill("solid", fgColor="243829")   # dark green
+VAR   = PatternFill("solid", fgColor="35301A")   # dark amber
+MISS  = PatternFill("solid", fgColor="35201F")   # dark red
+OCR_F = PatternFill("solid", fgColor="272438")   # dark purple
+STRIPE= PatternFill("solid", fgColor="302922")   # surface
+ALT   = PatternFill("solid", fgColor="3A3228")   # hi (alternating row)
 NEON  = PatternFill("solid", fgColor="FF7030")   # jump-back button
 
 # Fonts  (openpyxl requires hex without #)
