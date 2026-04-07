@@ -63,24 +63,24 @@ VM = {
 # Fills
 HDR   = PatternFill("solid", fgColor="FF7030")   # orange header (detail sheets)
 SHDRF = PatternFill("solid", fgColor="1E1B17")   # dark header  (summary sheet)
-MATCH = PatternFill("solid", fgColor="243829")   # dark green
-VAR   = PatternFill("solid", fgColor="35301A")   # dark amber
-MISS  = PatternFill("solid", fgColor="35201F")   # dark red
-OCR_F = PatternFill("solid", fgColor="272438")   # dark purple
-STRIPE= PatternFill("solid", fgColor="302922")   # surface
-ALT   = PatternFill("solid", fgColor="3A3228")   # hi (alternating row)
+MATCH = PatternFill("solid", fgColor="D6EDE0"   # light green
+VAR   = PatternFill("solid", fgColor="F5EDBE")   # dark amber
+MISS  = PatternFill("solid", fgColor="F5D4D4")   # dark red
+OCR_F = PatternFill("solid", fgColor="E2DDEF")   # dark purple
+STRIPE= PatternFill("solid", fgColor="F2EDE8")   # surface
+ALT   = PatternFill("solid", fgColor="E8E2DC")   # hi (alternating row)
 NEON  = PatternFill("solid", fgColor="FF7030")   # jump-back button
 
 # Fonts  (openpyxl requires hex without #)
-_A  = Font(name="Aptos", size=11, color="E8DDD0")                          # body
+_A  = Font(name="Aptos", size=11, color="2A2118")                          # body
 _AH = Font(name="Aptos", size=11, bold=True, color="1E1B17")               # detail header
 _AS = Font(name="Aptos", size=11, bold=True, color="FF7030")               # summary header
 _AL = Font(name="Aptos", size=11, color="FF7030", underline="single")      # hyperlink
 _JF = Font(name="Aptos", size=11, bold=True,  color="1E1B17")              # jump-back label
 
-_AM  = Font(name="Aptos", size=11, color="86EFAC")   # matched amount
-_AV  = Font(name="Aptos", size=11, color="FCD34D")   # variance amount
-_AMI = Font(name="Aptos", size=11, color="F87171")   # missing amount
+_AM  = Font(name="Aptos", size=11, color="1A7A40")   # matched amount
+_AV  = Font(name="Aptos", size=11, color="7A6000")   # variance amount
+_AMI = Font(name="Aptos", size=11, color="B02020")   # missing amount
 
 # Borders
 THIN_ORANGE = Border(
