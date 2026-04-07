@@ -46,9 +46,9 @@ function SlinkyText() {
             transform: `translateY(${y.toFixed(2)}px) translateX(${x.toFixed(2)}px)`,
             color: `rgba(255, ${Math.round(112 + bright * 30)}, 48, ${alpha})`,
             fontFamily: 'var(--mono)',
-            fontSize: 17,
+            fontSize: 21,
             letterSpacing: '0.04em',
-            fontWeight: 700,
+            fontWeight: 900,
             willChange: 'transform',
           }}>
             {char}
