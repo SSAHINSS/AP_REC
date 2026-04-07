@@ -43,7 +43,7 @@ function SlinkyText() {
             transform: `translateY(${y.toFixed(2)}px) translateX(${x.toFixed(2)}px)`,
             color: `rgba(255,${Math.round(112 + bright * 30)},48,${alpha})`,
             fontFamily: 'var(--mono)',
-            fontSize: 21,
+            fontSize: Math.round(18 + bright * 10),
             letterSpacing: '0.04em',
             fontWeight: 900,
             willChange: 'transform',
@@ -219,10 +219,11 @@ export default function AppPage({ onLogout }) {
           style={{
             fontSize: 15, padding: '16px 24px',
             position: 'relative', overflow: 'hidden',
-            borderColor: running ? 'var(--ox)' : undefined,
+            borderColor: running ? 'transparent' : undefined,
+            background: running ? 'transparent' : undefined,
           }}
         >
-          {running ? <SlinkyText /> : 'Run Reconciliation →'}
+          {running ? <SlinkyText /> : 'Run Reconciliation'}
         </button>
 
         {!running && logs.length > 0 && (

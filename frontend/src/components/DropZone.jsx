@@ -32,6 +32,7 @@ export default function DropZone({ label, accept, multiple = false, files, onCha
         onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false) }}
         onDrop={handleDrop}
         onClick={() => inputRef.current.click()}
+        style={{ padding: '18px 24px' }}
       >
         <input
           ref={inputRef}
@@ -41,25 +42,11 @@ export default function DropZone({ label, accept, multiple = false, files, onCha
           onChange={handleChange}
           style={{ display: 'none' }}
         />
-
-        {/* Clear-all X — top-right corner, only when files present */}
-        {files.length > 0 && (
-          <button
-            className="dropzone-clear"
-            type="button"
-            title="Clear all files"
-            onClick={e => { e.stopPropagation(); onChange([]) }}
-          >
-            ✕
-          </button>
-        )}
-
         <div style={{ pointerEvents: 'none' }}>
-          <div style={{ fontSize: 22, marginBottom: 6, opacity: 0.5 }}>↑</div>
           <div style={{ fontSize: 13, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>
             {label}
           </div>
-          <div style={{ marginTop: 12 }}>
+          <div style={{ marginTop: 10 }}>
             <button className="btn btn-browse" type="button" style={{ pointerEvents: 'none' }}>
               Browse
             </button>
@@ -67,8 +54,9 @@ export default function DropZone({ label, accept, multiple = false, files, onCha
         </div>
       </div>
 
+      {/* File chips */}
       {files.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
           {files.map((f, i) => (
             <span key={i} className="chip">
               {f.name}
@@ -76,6 +64,18 @@ export default function DropZone({ label, accept, multiple = false, files, onCha
             </span>
           ))}
         </div>
+      )}
+
+      {/* Clear all button */}
+      {files.length > 1 && (
+        <button
+          type="button"
+          className="btn btn-icon"
+          onClick={() => onChange([])}
+          style={{ alignSelf: 'flex-start', fontSize: 11, padding: '3px 12px' }}
+        >
+          Clear all
+        </button>
       )}
     </div>
   )
