@@ -144,10 +144,10 @@ export default function AppPage({ onLogout }) {
               userSelect: 'none',
             }}
           >
-            <AnimatedLogo width={230} />
+            <AnimatedLogo width={275} />
             <div>
-              <p style={{ fontSize: 12, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)' }}>AP Reconciliation</p>
-              <p style={{ color: 'var(--muted)', fontSize: 12, fontFamily: 'var(--mono)', fontWeight: 400 }}>
+              <p style={{ fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)' }}>AP Reconciliation</p>
+              <p style={{ color: 'var(--muted)', fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 400 }}>
                 vendor statement processor
               </p>
             </div>
