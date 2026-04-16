@@ -152,17 +152,26 @@ def parse_cks(t):
     return R
 
 def parse_edward_don(t):
-    R = []
-    for m in re.finditer(
-        r'\d{10}\s+(\d{10})\s+(\w+\s+\d{1,2}\s+\d{4})\s+\S+\s+'
-        r'\w+\s+\d{1,2}\s+\d{4}\s+([\d,]+\.\d{2})\s+USD\s+[\d,]+\.\d{2}\s+USD', t):
-        R.append({"Date":m[2],"Invoice":m[1].lstrip("0"),
-                   "Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    for m in re.finditer(
-        r'\d{10}\s+(\d{10})\s+(\w+\s+\d{1,2}\s+\d{4})\s+\S+\s+'
-        r'\w+\s+\d{1,2}\s+\d{4}\s+\(([\d,]+\.\d{2})\s+USD\)\s+\([\d,]+\.\d{2}\s+USD\)', t):
-        R.append({"Date":m[2],"Invoice":m[1].lstrip("0"),
-                   "Amount":-float(m[3].replace(",","")),"Type":"Credit Memo"})
+    R = []; seen = set()
+    # New format: optional PO# between date and due date
+    # 0001250580 0034896458 Mar 16 2026 Richard Apr 15 2026 1,104.30 USD
+    # 0001250580 0034959162 Mar 27 2026 Apr 26 2026 607.32 USD  (no PO#)
+    pat_inv = re.compile(
+        r'\d{10}\s+(\d{10})\s+(\w+\s+\d{1,2}\s+\d{4})\s+'
+        r'(?:\S+\s+)?\w+\s+\d{1,2}\s+\d{4}\s+([\d,]+\.\d{2})\s+USD', re.I)
+    pat_crd = re.compile(
+        r'\d{10}\s+(\d{10})\s+(\w+\s+\d{1,2}\s+\d{4})\s+'
+        r'(?:\S+\s+)?\w+\s+\d{1,2}\s+\d{4}\s+\(([\d,]+\.\d{2})\s+USD\)', re.I)
+    for m in pat_inv.finditer(t):
+        inv = m[1].lstrip("0")
+        if inv not in seen:
+            seen.add(inv)
+            R.append({"Date":m[2],"Invoice":inv,"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
+    for m in pat_crd.finditer(t):
+        inv = m[1].lstrip("0")
+        if inv not in seen:
+            seen.add(inv)
+            R.append({"Date":m[2],"Invoice":inv,"Amount":-float(m[3].replace(",","")),"Type":"Credit Memo"})
     return R
 
 def parse_romanos(t):
@@ -282,8 +291,16 @@ def parse_penguin(t):
 
 def parse_gfs(t):
     R = []
-    for m in re.finditer(r'(\d{9,})\s+(\d{2}/\d{2}/\d{2})\s+INVOICE\s+(?:\d+\s+)?([\d,]+\.\d{2})', t, re.I):
+    # New format: 9033136729 03/10/2026 Invoice $ 3,269.46
+    for m in re.finditer(r'(\d{7,})\s+(\d{2}/\d{2}/\d{4})\s+Invoice(?:\s+\d+)?\s+\$\s*([\d,]+\.\d{2})', t, re.I):
         R.append({"Date":m[2],"Invoice":m[1],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
+    # Credit: 2003236479 03/19/2026 Credit 9033338797 -$ 14.81
+    for m in re.finditer(r'(\d{7,})\s+(\d{2}/\d{2}/\d{4})\s+Credit\s+\d+\s+-?\$\s*([\d,]+\.\d{2})', t, re.I):
+        R.append({"Date":m[2],"Invoice":m[1],"Amount":-float(m[3].replace(",","")),"Type":"Credit Memo"})
+    # Old format fallback
+    if not R:
+        for m in re.finditer(r'(\d{9,})\s+(\d{2}/\d{2}/\d{2})\s+INVOICE\s+(?:\d+\s+)?([\d,]+\.\d{2})', t, re.I):
+            R.append({"Date":m[2],"Invoice":m[1],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
     return R
 
 def parse_amazon_xl(fp):
@@ -353,25 +370,99 @@ def _fuzzy_rank(query, candidates, n=12):
     scored.sort(reverse=True)
     return [c for _, c in scored[:n]]
 
-def parse_generic(t):
+def parse_service_statement(t):
+    """Generic service/field statement: short invoice#, date, $amount."""
     R = []; seen = set()
-    patterns = [
-        r"(\d{1,2}/\d{1,2}/\d{4})\s+Invoice\s+#?(\w+)\s+\$?([\d,]+\.\d{2})(?:\s|$)",
-        r"(\d{1,2}/\d{1,2}/\d{2,4})\s+(\d{6,})\s+([\d,]+\.\d{2})(?:\s|$)",
-        r"(\d{1,2}/\d{1,2}/\d{2,4})\s+INV\s*#?(\w+)\s+\$?([\d,]+\.\d{2})",
-        r"(\d{4}-\d{2}-\d{2})\s+(\w+)\s+\$?([\d,]+\.\d{2})(?:\s|$)",
-    ]
-    for pat in patterns:
-        for m in re.finditer(pat, t, re.IGNORECASE):
-            key = m[2]
-            if key in seen: continue
+    for m in re.finditer(r'^(\d{5,8})\s+\d{1,2}/\d{1,2}/\d{2,4}.*?\$(\d[\d,]+\.\d{2})', t, re.MULTILINE):
+        inv = m[1]
+        if inv not in seen:
+            seen.add(inv)
             try:
-                amt = float(m[3].replace(",",""))
+                amt = float(m[2].replace(",",""))
                 if 0 < amt < 1_000_000:
-                    seen.add(key)
-                    R.append({"Date":m[1],"Invoice":key,"Amount":amt,"Type":"Invoice (Auto)"})
+                    R.append({"Date":"","Invoice":inv,"Amount":amt,"Type":"Invoice"})
             except: pass
     return R
+
+def parse_generic(t):
+    """
+    Universal invoice extractor — works on ANY vendor format without prior knowledge.
+    Uses multiple strategies to find invoice numbers + amounts regardless of layout.
+    """
+    rows = []
+    seen = set()
+
+    def clean_amt(s):
+        s = str(s).replace(',','').replace('$','').strip()
+        neg = s.startswith('(') and s.endswith(')')
+        s = s.strip('()').rstrip('-')
+        try:
+            v = float(s)
+            return -v if neg else v
+        except:
+            return None
+
+    def add(inv, amt, date='', typ=None):
+        inv = str(inv).strip().rstrip('.')
+        norm = inv.lstrip('0') or inv
+        if len(norm) < 3: return
+        if inv in seen or norm in seen: return
+        v = clean_amt(amt) if not isinstance(amt, float) else amt
+        if v is None or abs(v) < 0.01 or abs(v) > 5_000_000: return
+        if typ is None: typ = 'Credit Memo' if v < 0 else 'Invoice'
+        seen.add(inv); seen.add(norm)
+        rows.append({"Date": date, "Invoice": norm, "Amount": v, "Type": typ})
+
+    lines = t.split('\n')
+    DATE = r'(?:\d{1,2}[/\.\-]\d{1,2}[/\.\-]\d{2,4})'
+    AMT  = r'(\(\d[\d,]+\.\d{2}\)|\d[\d,]+\.\d{2})'
+
+    # S1: Explicit Invoice/Credit labels
+    for line in lines:
+        m = re.search(
+            r'(?:Invoice|INV)[#\s\.\-]+([A-Z0-9\-]+?)[\s:,\.]+.*?'
+            r'(?:Orig(?:inal)?\.?\s+Amount\s+\$?\s*|Amount\s+\$?\s*)?' + AMT, line, re.I)
+        if m: add(m.group(1), m.group(2))
+        m = re.search(r'Credit[_ ]?Memo[#\s\.\-]+([A-Z0-9\-]+?)[\s:,\.]+.*?' + AMT, line, re.I)
+        if m:
+            v = clean_amt(m.group(2))
+            if v: add(m.group(1), -abs(v), typ='Credit Memo')
+
+    # S2: [optional aging code] Date + 7-12 digit invoice + amount at end of line
+    for line in lines:
+        m = re.search(rf'(?:^|\s)({DATE})\s+(\d{{7,12}})\b.*?' + AMT + r'\s*$', line.strip())
+        if m: add(m.group(2), m.group(3), date=m.group(1))
+
+    # S3: Long number + date + Invoice/Credit + amount (GFS new format)
+    for m in re.finditer(
+        rf'(\d{{7,12}})\s+({DATE})\s+(?:Invoice|Credit)(?:\s+\d+)?\s+\$?\s*([\d,]+\.\d{{2}})', t, re.I):
+        add(m.group(1), m.group(3), date=m.group(2))
+
+    # S4: Edward Don — 10-digit IDs + month-name date + amount USD
+    for m in re.finditer(
+        r'\d{10}\s+(\d{10})\s+(\w+\s+\d{1,2}\s+\d{4})\s+'
+        r'(?:\S+\s+)?\w+\s+\d{1,2}\s+\d{4}\s+'
+        r'(\(\d[\d,]+\.\d{2}\)|\d[\d,]+\.\d{2})\s+USD', t, re.I):
+        add(m.group(1).lstrip('0'), m.group(3), date=m.group(2))
+
+    # S5: Samuels/ledger style — date + single letter type + number + amount
+    for m in re.finditer(rf'({DATE})\s+[IiCcPp]\s+(\d{{5,}})\s+([\d,]+\.\d{{2}})', t):
+        c = m.group(0)[len(m.group(1)):].strip()[0].upper()
+        add(m.group(2), m.group(3), date=m.group(1),
+            typ='Invoice' if c == 'I' else 'Credit Memo')
+
+    # S6: Last resort — any line with $amount, grab first reasonable invoice number
+    for line in lines:
+        if re.search(r'\$[\d,]+\.\d{2}', line):
+            nums = re.findall(r'\b(\d{4,12})\b', line)
+            amts = re.findall(r'\$([\d,]+\.\d{2})', line)
+            if nums and amts:
+                for n in nums:
+                    if n not in seen:
+                        add(n, amts[0]); break
+
+    return rows
+
 
 def parse_wrights(t):
     R = []
@@ -711,7 +802,7 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
         if not rows:
             rows = parse_wrights(txt)
         if not rows:
-            rows = parse_generic(txt)
+            rows = parse_generic(txt)  # universal extractor — handles any format
 
         if not rows and not txt.strip():
             log(f"  No text extracted"); reconciled.add(fn); continue
