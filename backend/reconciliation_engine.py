@@ -47,27 +47,47 @@ VM = {
     "COZZINI":"Cozzini Bros. Inc",
 }
 
-# ── Styles ─────────────────────────────────────────────────────────────────
-_A  = Font(name="Aptos", size=12)
-_AH = Font(name="Aptos", size=12, bold=True, color="FFFFFF")
-_AS = Font(name="Aptos", size=12, bold=True, color="FFFFFF")
-_AL = Font(name="Aptos", size=12, color="1F4E79", underline="single")
-_JF = Font(name="Aptos", size=12, bold=True, color="FF1493")
+# ══════════════════════════════════════════════════════════════════════════
+#  THEME  —  mirrors the website's CSS custom properties
+#  --bg      #1E1B17   dark warm background
+#  --surface #26211C   card / panel background
+#  --hi      #302820   slightly lighter warm brown
+#  --text    #E8DDD0   cream
+#  --muted   #8C7B6A   warm grey-brown
+#  --ox      #FF7030   orange accent
+#  log-ok    #86EFAC   green
+#  log-skip  #FCD34D   amber
+#  log-err   #F87171   red
+# ══════════════════════════════════════════════════════════════════════════
 
-HDR   = PatternFill("solid", fgColor="5B9BD5")
-MATCH = PatternFill("solid", fgColor="E8F8F0")
-VAR   = PatternFill("solid", fgColor="FFF9E6")
-MISS  = PatternFill("solid", fgColor="FDF0EF")
-OCR_F = PatternFill("solid", fgColor="F5F0FA")
-STRIPE= PatternFill("solid", fgColor="F7FAFD")
-SHDRF = PatternFill("solid", fgColor="34495E")
-NEON  = PatternFill("solid", fgColor="CCFF00")
+# Fills
+HDR   = PatternFill("solid", fgColor="FF7030")   # orange header (detail sheets)
+SHDRF = PatternFill("solid", fgColor="1E1B17")   # dark header  (summary sheet)
+MATCH = PatternFill("solid", fgColor="D6EDE0")   # light green
+VAR   = PatternFill("solid", fgColor="F5EDBE")   # dark amber
+MISS  = PatternFill("solid", fgColor="F5D4D4")   # dark red
+OCR_F = PatternFill("solid", fgColor="E2DDEF")   # dark purple
+STRIPE= PatternFill("solid", fgColor="F2EDE8")   # surface
+ALT   = PatternFill("solid", fgColor="E8E2DC")   # hi (alternating row)
+NEON  = PatternFill("solid", fgColor="FF7030")   # jump-back button
 
-GREEN_BORDER = Border(
-    left=Side(style="medium", color="00B050"),
-    right=Side(style="medium", color="00B050"),
-    top=Side(style="medium", color="00B050"),
-    bottom=Side(style="medium", color="00B050"),
+# Fonts  (openpyxl requires hex without #)
+_A  = Font(name="Aptos", size=11, color="2A2118")                          # body
+_AH = Font(name="Aptos", size=11, bold=True, color="1E1B17")               # detail header
+_AS = Font(name="Aptos", size=11, bold=True, color="FF7030")               # summary header
+_AL = Font(name="Aptos", size=11, color="FF7030", underline="single")      # hyperlink
+_JF = Font(name="Aptos", size=11, bold=True,  color="1E1B17")              # jump-back label
+
+_AM  = Font(name="Aptos", size=11, color="1A7A40")   # matched amount
+_AV  = Font(name="Aptos", size=11, color="7A6000")   # variance amount
+_AMI = Font(name="Aptos", size=11, color="B02020")   # missing amount
+
+# Borders
+THIN_ORANGE = Border(
+    left=Side(style="thin", color="FF7030"),
+    right=Side(style="thin", color="FF7030"),
+    top=Side(style="thin", color="FF7030"),
+    bottom=Side(style="thin", color="FF7030"),
 )
 NO_BORDER = Border()
 
@@ -105,7 +125,6 @@ def _pdf(fp):
             return t
     except Exception:
         pass
-    # Fallback: OCR for scanned documents
     try:
         from pdf2image import convert_from_path
         import pytesseract
@@ -277,21 +296,18 @@ def parse_amazon_xl(fp):
                 d = str(r.iloc[2]) if pd.notna(r.iloc[2]) else ""
                 amt = r.iloc[8] if pd.notna(r.iloc[8]) else 0
                 if inv: R.append({"Date":d[:10],"Invoice":inv,"Amount":float(amt),"Type":"Invoice"})
-    except Exception as e:
+    except Exception:
         pass
     return R
 
-
 def parse_fortessa(t):
     R = []
-    # Invoice # wraps to next line: date/amount on line 1, #INVxxxxxx on line 2
     pat = re.compile(
         r'(\d{2}/\d{2}/\d{4})\s+Invoice\s+.*?\$([\d,]+\.\d{2})\s+\d{2}/\d{2}/\d{4}.*?\n(#INV\d+)',
         re.DOTALL)
     for m in pat.finditer(t):
         R.append({"Date":m[1],"Invoice":m[3].lstrip("#"),"Amount":float(m[2].replace(",","")),"Type":"Invoice"})
     return R
-
 
 def parse_unifirst(t):
     R = []
@@ -317,24 +333,20 @@ def parse_wri(t):
         R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
     return R
 
-
 def parse_cozzini(t):
     R = []
     for m in re.finditer(r'(\d{1,2}/\d{1,2}/\d{4})\s+Invoice\s+#(C\d+)\s+([\d,]+\.\d{2})', t):
         R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
     return R
 
-
 from difflib import SequenceMatcher
 
 def _fuzzy_rank(query, candidates, n=12):
-    """Rank GL vendor names by similarity to the filename vendor key."""
     q = query.upper().replace("_"," ")
     scored = []
     for c in candidates:
         cu = c.upper()
         ratio = SequenceMatcher(None, q, cu).ratio()
-        # Boost if any word from the query appears in the candidate
         if any(w in cu for w in q.split() if len(w) > 2):
             ratio += 0.25
         scored.append((ratio, c))
@@ -342,7 +354,6 @@ def _fuzzy_rank(query, candidates, n=12):
     return [c for _, c in scored[:n]]
 
 def parse_generic(t):
-    """Fallback parser for new/unknown vendors — covers common tabular formats."""
     R = []; seen = set()
     patterns = [
         r"(\d{1,2}/\d{1,2}/\d{4})\s+Invoice\s+#?(\w+)\s+\$?([\d,]+\.\d{2})(?:\s|$)",
@@ -362,9 +373,7 @@ def parse_generic(t):
             except: pass
     return R
 
-
 def parse_wrights(t):
-    """Wright's Gourmet House — OCR splits invoice lines from amounts into two columns."""
     R = []
     inv_lines = re.findall(r'(\d{2}/\d{2}/\d{2})\s+(\d{7})', t)
     parts = re.split(r'Amount\s+Balance\s+Due\s+by', t, maxsplit=1, flags=re.IGNORECASE)
@@ -435,86 +444,117 @@ def _aw(ws, nc, mr=200, money_cols=None):
 
 def fmt_detail(ws, nr, nc):
     ws.sheet_view.showGridLines = False
+    ws.sheet_properties.tabColor = "FF7030"   # orange tab
     ws.freeze_panes = "A2"
-    sc = nc
     MONEY_COLS = {"Stmt Amount","GL Amount","Variance"}
+
     for r in range(1, nr + 2):
         ws.row_dimensions[r].height = ROW_HT
+
+    # Header row — orange fill, dark text
     for c in range(1, nc+1):
-        cl = ws.cell(1,c); cl.fill = HDR; cl.font = _AH
+        cl = ws.cell(1, c)
+        cl.fill = HDR; cl.font = _AH; cl.border = NO_BORDER
         cl.alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
-        cl.border = NO_BORDER
+
+    # Data rows
     for r in range(2, nr+2):
-        st = ws.cell(r,sc).value or ""
+        st = ws.cell(r, nc).value or ""
         for c in range(1, nc+1):
-            cl = ws.cell(r,c); cl.font = _A; cl.border = NO_BORDER
-            if st == "Matched":           cl.fill = MATCH
-            elif st == "Amount Variance": cl.fill = VAR
-            elif st == "Missing in GL":   cl.fill = MISS
-            elif "OCR" in st:            cl.fill = OCR_F
-            elif r%2 == 0:               cl.fill = STRIPE
-            cn = ws.cell(1,c).value or ""
+            cl = ws.cell(r, c); cl.border = NO_BORDER
+            cn = ws.cell(1, c).value or ""
+
+            # Row fill by status
+            if st == "Matched":
+                cl.fill = MATCH
+                cl.font = _AM if cn in MONEY_COLS else _A
+            elif st == "Amount Variance":
+                cl.fill = VAR
+                cl.font = _AV if cn in MONEY_COLS else _A
+            elif st == "Missing in GL":
+                cl.fill = MISS
+                cl.font = _AMI if cn in MONEY_COLS else _A
+            elif "OCR" in st:
+                cl.fill = OCR_F; cl.font = _A
+            elif r % 2 == 0:
+                cl.fill = STRIPE; cl.font = _A
+            else:
+                cl.fill = ALT; cl.font = _A
+
+            # Number formats & alignment
             if cn in MONEY_COLS:
                 if cl.value is not None: cl.number_format = COMMA_FMT
                 cl.alignment = Alignment(horizontal="right", vertical="center")
             else:
                 cl.alignment = Alignment(horizontal="center", vertical="center")
+
             if cn == "Date" and cl.value is not None:
                 nd = _norm_date(str(cl.value)) if isinstance(cl.value, str) else cl.value
                 if isinstance(nd, datetime):
                     cl.value = nd; cl.number_format = DATE_FMT
                 cl.alignment = Alignment(horizontal="center", vertical="center")
-    _aw(ws, nc, money_cols={"Stmt Amount","GL Amount","Variance"})
+
+    _aw(ws, nc, money_cols=MONEY_COLS)
+
+    # Jump-back button — col K
     jc = ws.cell(1, 11)
-    jc.value = "Jump Back to Summary"
+    jc.value = "← Summary"
     jc.hyperlink = "#Summary!A1"
     jc.font = _JF
     jc.fill = NEON
-    jc.border = GREEN_BORDER
+    jc.border = NO_BORDER
     jc.alignment = Alignment(horizontal="center", vertical="center")
-    if ws.column_dimensions['K'].width < 26:
-        ws.column_dimensions['K'].width = 26
+    if ws.column_dimensions['K'].width < 20:
+        ws.column_dimensions['K'].width = 20
+
 
 def fmt_summary(ws, nr, nc):
     ws.sheet_view.showGridLines = False
+    ws.sheet_properties.tabColor = "FF7030"
     ws.freeze_panes = "A2"
     MONEY_COLS = {"Stmt Total","GL Total","Net Variance"}
     QTY_COLS   = {"Items","Matched","Amt Variance","Missing in GL"}
+
     for r in range(1, nr + 2):
         ws.row_dimensions[r].height = ROW_HT
+
+    # Header — dark fill, orange text
     for c in range(1, nc+1):
-        cl = ws.cell(1,c); cl.fill = SHDRF; cl.font = _AS; cl.border = NO_BORDER
+        cl = ws.cell(1, c)
+        cl.fill = SHDRF; cl.font = _AS; cl.border = NO_BORDER
         cl.alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
+
+    # Data rows
     for r in range(2, nr+2):
-        mi_v = ws.cell(r,6).value or 0; va = ws.cell(r,5).value or 0
-        rf = PatternFill("solid", fgColor="FDF0EF") if mi_v>0 else (
-             PatternFill("solid", fgColor="FFF9E6") if va>0 else
-             PatternFill("solid", fgColor="E8F8F0"))
+        mi_v = ws.cell(r, 6).value or 0
+        va   = ws.cell(r, 5).value or 0
+        rf = MISS if mi_v > 0 else (VAR if va > 0 else MATCH)
+
         for c in range(1, nc+1):
-            cl = ws.cell(r,c); cl.border = NO_BORDER
-            if c != 1: cl.font = _A
+            cl = ws.cell(r, c); cl.border = NO_BORDER
             cl.fill = rf
-            cn = ws.cell(1,c).value or ""
+            cn = ws.cell(1, c).value or ""
+
+            # Font color by status
             if cn in MONEY_COLS:
+                cl.font = _AMI if mi_v > 0 else (_AV if va > 0 else _AM)
                 if cl.value is not None: cl.number_format = COMMA_FMT
                 cl.alignment = Alignment(horizontal="right", vertical="center")
             elif cn in QTY_COLS:
+                cl.font = _A
                 if cl.value is not None: cl.number_format = COMMA_INT
                 cl.alignment = Alignment(horizontal="center", vertical="center")
             else:
+                cl.font = _A
                 cl.alignment = Alignment(horizontal="center", vertical="center")
-    _aw(ws, nc, money_cols={"Stmt Total","GL Total","Net Variance"})
+
+    _aw(ws, nc, money_cols=MONEY_COLS)
 
 # ══════════════════════════════════════════════════════════════════════════
-#  CORE RECONCILIATION (refactored to accept paths, not use globals)
+#  CORE RECONCILIATION
 # ══════════════════════════════════════════════════════════════════════════
 
 def smart_invoice_match(raw_rows, gl, log_fn=None):
-    """
-    Reverse-engineer vendor + location by looking up invoice numbers directly
-    in the GL — no reliance on the filename. Groups results by GL vendor/location.
-    Returns list of {label, rows, vendor, loc_id} dicts, or [] if nothing found.
-    """
     def log(m):
         if log_fn: log_fn(m)
 
@@ -522,8 +562,7 @@ def smart_invoice_match(raw_rows, gl, log_fn=None):
     if not inv_rows:
         return []
 
-    # Build every normalised variant of each invoice number
-    variants = {}   # variant_str → original invoice string
+    variants = {}
     for r in inv_rows:
         raw = str(r["Invoice"]).strip()
         for v in [raw, raw.lstrip("0"),
@@ -531,7 +570,6 @@ def smart_invoice_match(raw_rows, gl, log_fn=None):
             if v:
                 variants[v] = raw
 
-    # Single GL lookup (no vendor/location filter)
     gl_hit = gl[gl["Document number"].isin(variants.keys())].copy()
 
     if gl_hit.empty:
@@ -540,16 +578,9 @@ def smart_invoice_match(raw_rows, gl, log_fn=None):
 
     log(f"  smart-match: {len(gl_hit)} GL entries matched from {len(inv_rows)} invoices")
 
-    # Build reverse map: gl doc# → original invoice string
-    inv_by_variant = {}
-    for variant, orig in variants.items():
-        inv_by_variant[variant] = orig
-
-    # Group GL hits by vendor + location
     results = []
     for (vendor, loc_id), grp in gl_hit.groupby(["Vendor name","Location ID"]):
         gl_docs = set(grp["Document number"].tolist())
-        # Find the original rows that matched this GL group
         sub = [r for r in inv_rows
                if any(v in gl_docs for v in [
                    str(r["Invoice"]).strip(),
@@ -572,7 +603,7 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
     gl_path   : path to the GL CSV file
     stmt_paths: list of paths to vendor statement files (PDF / XLSX)
     log_fn    : optional callable(str) for progress messages
-    Returns   : bytes of the output XLSX, or raises on error
+    Returns   : (bytes, filename, reconciled_set, skipped_list)
     """
     def log(msg):
         if log_fn: log_fn(msg)
@@ -585,7 +616,6 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
     gl["Location ID"] = gl["Location ID"].fillna("")
     log(f"  {len(gl):,} GL rows loaded")
 
-    # Build a name→path dict for statement files
     stmt_map = {os.path.basename(p): p for p in stmt_paths}
     stmts = sorted(
         fn for fn in stmt_map
@@ -602,11 +632,9 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
         file_overrides = {}
 
     def do(sn, raw, gv, gl_l, src):
-        """Reconcile rows against GL, deduplicate sheet names automatically."""
         inv_rows = [r for r in raw if r["Type"] not in SKIP_TYPES]
         if not inv_rows:
             log(f"    (all payments — skipped)"); reconciled.add(src); return
-        # Deduplicate sheet name if already used
         base_sn = sn[:31]; sn2 = base_sn; n = 1
         while sn2 in sheets:
             sn2 = f"{base_sn[:28]} {n:02d}"; n += 1
@@ -636,7 +664,6 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
         log(f"    {len(df)} items: {m} matched, {v} variance, {mig} missing in GL")
 
     def process_rows(fn, fp, rows, fallback_label, fallback_vendor, fallback_locs):
-        """Smart match first. If nothing found, fall back to filename-derived info."""
         smart = smart_invoice_match(rows, gl, log)
         if smart:
             for sg in smart:
@@ -645,14 +672,12 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
             log(f"    Smart match found nothing — using filename fallback")
             do(fallback_label, rows, fallback_vendor, fallback_locs, fn)
 
-    # ── Process every file independently — no deduplication ──────────────
     for fn in sorted(stmts):
         fp   = stmt_map[fn]
         ov   = file_overrides.get(fn, {})
         l, v = fi(fn)
         log(f"Processing: {fn}")
 
-        # ── US PAPER special case ────────────────────────────────────────
         if v == "US PAPER":
             txt = _pdf(fp); us = parse_us_paper(txt)
             usm = {
@@ -670,7 +695,6 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
             if not found_sub: reconciled.add(fn)
             continue
 
-        # ── Amazon XLSX ──────────────────────────────────────────────────
         if fn.endswith(".xlsx") and "AMAZON" in fn.upper():
             r = parse_amazon_xl(fp)
             gv   = ov.get("gl_vendor") or VM.get(v,"Amazon Capital Services")
@@ -679,10 +703,7 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
             else: reconciled.add(fn)
             continue
 
-        # ── All other files: extract rows then smart-match ───────────────
         txt = _pdf(fp)
-
-        # Try vendor-specific parser first, then Wright's, then generic
         parser = PARSERS.get(v) if v else None
         rows = None
         if parser:
@@ -697,7 +718,6 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
         if not rows:
             log(f"  No invoices found ({len(txt)} chars)"); reconciled.add(fn); continue
 
-        # Filename-derived fallback info (used only if smart match finds nothing)
         fb_vendor = ov.get("gl_vendor") or (VM.get(v) if v else "") or ""
         fb_locs   = ov.get("gl_locs")   or (LOC.get(l,[]) if l else [])
         fb_label  = f"{l} {v.title()}" if l and v else fn.replace(".pdf","").replace(".xlsx","")[:31]
@@ -724,10 +744,13 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
         s = sn[:31]
         if s in wb.sheetnames: fmt_detail(wb[s], len(df), len(df.columns))
     ws = wb["Summary"]; fmt_summary(ws, len(sdf), len(sdf.columns))
+
+    # Hyperlinks on summary vendor names
     for r in range(2, len(sdf)+2):
-        cl = ws.cell(r,1); sn = cl.value
+        cl = ws.cell(r, 1); sn = cl.value
         if sn and sn[:31] in wb.sheetnames:
             cl.hyperlink = f"#'{sn[:31]}'!A1"; cl.font = _AL
+
     out_buf = io.BytesIO()
     wb.save(out_buf)
     out_buf.seek(0)
@@ -735,6 +758,5 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
     tm=sdf["Matched"].sum(); tv=sdf["Amt Variance"].sum(); tmi=sdf["Missing in GL"].sum()
     log(f"Done! {len(sheets)+1} sheets — {tm} matched | {tv} variances | {tmi} missing in GL")
 
-    skipped = sorted(all_stmt_set - reconciled)   # guaranteed: reconciled + skipped = total
+    skipped = sorted(all_stmt_set - reconciled)
     return out_buf.getvalue(), output_filename, reconciled, skipped
-
