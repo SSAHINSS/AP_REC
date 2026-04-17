@@ -684,9 +684,18 @@ def smart_invoice_match(raw_rows, gl, log_fn=None):
     variants = {}
     for r in inv_rows:
         raw = str(r["Invoice"]).strip()
-        for v in [raw, raw.lstrip("0"),
-                  raw.zfill(10) if raw.isdigit() and len(raw) < 10 else None]:
-            if v:
+        import re as _re
+        candidates = [
+            raw,
+            raw.lstrip("0") or raw,
+            raw.zfill(10) if raw.isdigit() and len(raw) < 10 else None,
+            f"INV-{raw}" if raw.isdigit() else None,
+            f"INV{raw}" if raw.isdigit() else None,
+            _re.sub(r'^INV[-\s]?', '', raw) if raw.upper().startswith('INV') else None,
+            (_re.sub(r'^INV[-\s]?', '', raw)).lstrip('0') if raw.upper().startswith('INV') else None,
+        ]
+        for v in candidates:
+            if v and v.strip():
                 variants[v] = raw
 
     gl_hit = gl[gl["Document number"].isin(variants.keys())].copy()
@@ -706,7 +715,11 @@ def smart_invoice_match(raw_rows, gl, log_fn=None):
                    str(r["Invoice"]).strip().lstrip("0"),
                    str(r["Invoice"]).strip().zfill(10)
                    if str(r["Invoice"]).strip().isdigit()
-                   and len(str(r["Invoice"]).strip()) < 10 else None
+                   and len(str(r["Invoice"]).strip()) < 10 else None,
+                   f"INV-{str(r['Invoice']).strip()}"
+                   if str(r["Invoice"]).strip().isdigit() else None,
+                   f"INV{str(r['Invoice']).strip()}"
+                   if str(r["Invoice"]).strip().isdigit() else None,
                ] if v)]
         if sub:
             # Require at least 2 matching invoices OR >20% of total invoices
