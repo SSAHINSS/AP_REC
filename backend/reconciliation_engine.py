@@ -722,11 +722,16 @@ def smart_invoice_match(raw_rows, gl, log_fn=None):
                    if str(r["Invoice"]).strip().isdigit() else None,
                ] if v)]
         if sub:
-            # Require at least 2 matching invoices OR >20% of total invoices
-            # This prevents short-number false positives from polluting output
-            min_match = max(2, int(len(inv_rows) * 0.15))
-            if len(sub) < min_match and len(sub) < 2:
-                log(f"    ↳ skipping {vendor} / {loc_id}: only {len(sub)} match (likely false positive)")
+            # Filter false positives but allow single-invoice files to match
+            # Rule: need at least 2 matches OR match covers >25% of invoices
+            # Exception: if file only has 1-2 invoices total, allow 1 match
+            total_inv = len(inv_rows)
+            if total_inv <= 2:
+                min_match = 1  # small files: allow any match
+            else:
+                min_match = max(2, int(total_inv * 0.20))
+            if len(sub) < min_match:
+                log(f"    ↳ skipping {vendor} / {loc_id}: {len(sub)}/{total_inv} match (below threshold)")
                 continue
             label = f"{loc_id} {vendor.split()[0]}"[:31]
             log(f"    → {vendor} / {loc_id}: {len(sub)} invoices")
