@@ -386,11 +386,12 @@ def parse_service_statement(t):
 
 def parse_generic(t):
     """
-    Universal invoice extractor — works on ANY vendor format without prior knowledge.
-    Uses multiple strategies to find invoice numbers + amounts regardless of layout.
+    Universal invoice extractor — works on any vendor format.
+    Fixed: no year-numbers, no double-counting, preserves alphanumeric invoice IDs.
     """
     rows = []
     seen = set()
+    inv_lines = set()
 
     def clean_amt(s):
         s = str(s).replace(',','').replace('$','').strip()
@@ -402,64 +403,80 @@ def parse_generic(t):
         except:
             return None
 
-    def add(inv, amt, date='', typ=None):
+    def is_year(s):
+        try: return 1900 <= int(s) <= 2099
+        except: return False
+
+    def add(inv, amt, date='', typ=None, line_idx=None):
         inv = str(inv).strip().rstrip('.')
-        norm = inv.lstrip('0') or inv
+        if re.match(r'^\d+$', inv):
+            norm = inv.lstrip('0') or inv
+        else:
+            norm = inv
         if len(norm) < 3: return
+        if is_year(norm): return
         if inv in seen or norm in seen: return
         v = clean_amt(amt) if not isinstance(amt, float) else amt
         if v is None or abs(v) < 0.01 or abs(v) > 5_000_000: return
         if typ is None: typ = 'Credit Memo' if v < 0 else 'Invoice'
         seen.add(inv); seen.add(norm)
+        if line_idx is not None: inv_lines.add(line_idx)
         rows.append({"Date": date, "Invoice": norm, "Amount": v, "Type": typ})
 
     lines = t.split('\n')
     DATE = r'(?:\d{1,2}[/\.\-]\d{1,2}[/\.\-]\d{2,4})'
     AMT  = r'(\(\d[\d,]+\.\d{2}\)|\d[\d,]+\.\d{2})'
 
-    # S1: Explicit Invoice/Credit labels
-    for line in lines:
+    # S1: Explicit Invoice/Credit labels — highest priority
+    # Requires invoice ID starts with a digit (or optional letter then digit)
+    for i, line in enumerate(lines):
         m = re.search(
-            r'(?:Invoice|INV)[#\s\.\-]+([A-Z0-9\-]+?)[\s:,\.]+.*?'
+            r'(?:Invoice|INV)[#\s\.\-]+([A-Z]?\d[A-Z0-9\-]*)[\s:,\.]+.*?'
             r'(?:Orig(?:inal)?\.?\s+Amount\s+\$?\s*|Amount\s+\$?\s*)?' + AMT, line, re.I)
-        if m: add(m.group(1), m.group(2))
-        m = re.search(r'Credit[_ ]?Memo[#\s\.\-]+([A-Z0-9\-]+?)[\s:,\.]+.*?' + AMT, line, re.I)
+        if m:
+            add(m.group(1).rstrip('.'), m.group(2), line_idx=i)
+            inv_lines.add(i)
+        m = re.search(r'Credit[_ ]?Memo[#\s\.\-]+([A-Z]?\d[A-Z0-9\-]*)[\s:,\.]+.*?' + AMT, line, re.I)
         if m:
             v = clean_amt(m.group(2))
-            if v: add(m.group(1), -abs(v), typ='Credit Memo')
+            if v: add(m.group(1), -abs(v), typ='Credit Memo', line_idx=i)
 
     # S2: [optional aging code] Date + 7-12 digit invoice + amount at end of line
-    for line in lines:
+    for i, line in enumerate(lines):
+        if i in inv_lines: continue
         m = re.search(rf'(?:^|\s)({DATE})\s+(\d{{7,12}})\b.*?' + AMT + r'\s*$', line.strip())
-        if m: add(m.group(2), m.group(3), date=m.group(1))
+        if m and not is_year(m.group(2)):
+            add(m.group(2), m.group(3), date=m.group(1), line_idx=i)
 
-    # S3: Long number + date + Invoice/Credit + amount (GFS new format)
+    # S3: Long number + date + Invoice/Credit + amount (GFS)
     for m in re.finditer(
         rf'(\d{{7,12}})\s+({DATE})\s+(?:Invoice|Credit)(?:\s+\d+)?\s+\$?\s*([\d,]+\.\d{{2}})', t, re.I):
-        add(m.group(1), m.group(3), date=m.group(2))
+        if not is_year(m.group(1)):
+            add(m.group(1), m.group(3), date=m.group(2))
 
-    # S4: Edward Don — 10-digit IDs + month-name date + amount USD
+    # S4: Edward Don — 10-digit IDs + month-name date + USD
     for m in re.finditer(
         r'\d{10}\s+(\d{10})\s+(\w+\s+\d{1,2}\s+\d{4})\s+'
         r'(?:\S+\s+)?\w+\s+\d{1,2}\s+\d{4}\s+'
         r'(\(\d[\d,]+\.\d{2}\)|\d[\d,]+\.\d{2})\s+USD', t, re.I):
         add(m.group(1).lstrip('0'), m.group(3), date=m.group(2))
 
-    # S5: Samuels/ledger style — date + single letter type + number + amount
+    # S5: Samuels/ledger — date + single letter type + number + amount
     for m in re.finditer(rf'({DATE})\s+[IiCcPp]\s+(\d{{5,}})\s+([\d,]+\.\d{{2}})', t):
         c = m.group(0)[len(m.group(1)):].strip()[0].upper()
         add(m.group(2), m.group(3), date=m.group(1),
             typ='Invoice' if c == 'I' else 'Credit Memo')
 
-    # S6: Last resort — any line with $amount, grab first reasonable invoice number
-    for line in lines:
+    # S6: Last resort — $amount lines not already processed, filter years
+    for i, line in enumerate(lines):
+        if i in inv_lines: continue
         if re.search(r'\$[\d,]+\.\d{2}', line):
             nums = re.findall(r'\b(\d{4,12})\b', line)
             amts = re.findall(r'\$([\d,]+\.\d{2})', line)
             if nums and amts:
                 for n in nums:
-                    if n not in seen:
-                        add(n, amts[0]); break
+                    if not is_year(n) and n not in seen:
+                        add(n, amts[0], line_idx=i); break
 
     return rows
 
@@ -514,7 +531,18 @@ def glk(gl, vn, locs):
     return gl[m].groupby("Document number")["Amount"].sum().to_dict()
 
 def mi(inv, lk):
-    for c in [inv, inv.lstrip("0"), inv.zfill(10) if inv.isdigit() and len(inv)<10 else None]:
+    # Try multiple variants to match GL document numbers
+    inv = str(inv).strip()
+    candidates = [
+        inv,                                              # exact
+        inv.lstrip("0") or inv,                          # strip leading zeros
+        inv.zfill(10) if inv.isdigit() and len(inv)<10 else None,  # zero-padded
+        f"INV-{inv}" if inv.isdigit() else None,         # add INV- prefix
+        f"INV{inv}" if inv.isdigit() else None,           # add INV prefix
+        re.sub(r'^INV[-\s]?', '', inv),                  # strip INV- prefix
+        re.sub(r'^INV[-\s]?', '', inv).lstrip("0"),      # strip prefix + zeros
+    ]
+    for c in candidates:
         if c and c in lk: return c, lk[c]
     return None, None
 
@@ -732,7 +760,9 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
         inv_rows = [r for r in raw if r["Type"] not in SKIP_TYPES]
         if not inv_rows:
             log(f"    (all payments — skipped)"); reconciled.add(src); return
-        base_sn = sn[:31]; sn2 = base_sn; n = 1
+        # Use source filename as sheet name base (Issue 5 fix)
+        base_sn = src.replace('.pdf','').replace('.xlsx','').replace('.PDF','').replace('.XLSX','')[:31]
+        sn2 = base_sn; n = 1
         while sn2 in sheets:
             sn2 = f"{base_sn[:28]} {n:02d}"; n += 1
         sn = sn2
