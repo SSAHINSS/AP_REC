@@ -778,9 +778,8 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
         inv_rows = [r for r in raw if r["Type"] not in SKIP_TYPES]
         if not inv_rows:
             log(f"    (all payments — skipped)"); reconciled.add(src); return
-        # Use source filename as sheet name base (Issue 5 fix)
-        base_sn = src.replace('.pdf','').replace('.xlsx','').replace('.PDF','').replace('.XLSX','')[:31]
-        sn2 = base_sn; n = 1
+        # Col A = descriptive Entity_Vendor label (Col B = source filename)
+        base_sn = sn[:31]; sn2 = base_sn; n = 1
         while sn2 in sheets:
             sn2 = f"{base_sn[:28]} {n:02d}"; n += 1
         sn = sn2
