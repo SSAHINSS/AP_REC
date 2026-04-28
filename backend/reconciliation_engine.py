@@ -386,8 +386,8 @@ def parse_service_statement(t):
 
 def parse_generic(t):
     """
-    Universal invoice extractor — handles any vendor format.
-    Strategies: explicit labels → GFS-style tabular → Hachette/aging → EdDon → Samuels → fallback
+    Universal invoice extractor. Statement total is gospel.
+    Handles all known vendor formats including CW, GFS, Halperns, US Paper, Ashberry etc.
     """
     rows = []
     seen = set()
@@ -407,12 +407,17 @@ def parse_generic(t):
         try: return 1900 <= int(s) <= 2099
         except: return False
 
+    def looks_like_amount(s):
+        """Returns True if string looks like a dollar amount rather than invoice ID."""
+        return bool(re.match(r'^\d{1,6}\.\d{2}$', s))
+
     def add(inv, amt, date='', typ=None, line_idx=None):
         inv = str(inv).strip().rstrip('.')
         norm = inv.lstrip('0') if re.match(r'^\d+$', inv) else inv
         norm = norm or inv
         if len(norm) < 3: return
         if is_year(norm): return
+        if looks_like_amount(norm): return  # don't use amounts as invoice IDs
         if inv in seen or norm in seen: return
         v = clean_amt(amt) if not isinstance(amt, float) else amt
         if v is None or abs(v) < 0.01 or abs(v) > 5_000_000: return
@@ -424,32 +429,68 @@ def parse_generic(t):
     lines = t.split('\n')
     DATE = r'(?:\d{1,2}[/\.\-]\d{1,2}[/\.\-]\d{2,4})'
 
-    # S1: Explicit "Invoice #NUMBER" or "INV #NUMBER" with amount on same line
-    # Handles: "Invoice #97128: 382.90", "Invoice #INV4864806 $98.62"
-    # "INV #366386. Orig. Amount $90.00", "INV-70432 ... $130.89"
+    # S1a: CW/Chefs Warehouse format — NUMBER DATE Invoice AMOUNT
+    # "70564571 12/15/25 Invoice 43.01 43.01 70564571 12/15/25 43.01"
+    CW_INV = re.compile(rf'^(\d{{7,10}})\s+({DATE})\s+Invoice\s+([\d,]+\.\d{{2}})', re.M | re.I)
+    for m in CW_INV.finditer(t):
+        line_no = t[:m.start()].count('\n')
+        add(m.group(1), m.group(3), date=m.group(2), typ='Invoice', line_idx=line_no)
+
+    # S1b: CW credit lines — NUMBER DATE (AMOUNT) with prev line = "Credit Memo"
+    # "71243590 02/12/26 (101.68) (101.68)"
+    CW_CM = re.compile(rf'^(\d{{7,10}})\s+({DATE})\s+(\([\d,]+\.\d{{2}}\))', re.M)
+    for m in CW_CM.finditer(t):
+        line_no = t[:m.start()].count('\n')
+        if line_no in inv_lines: continue
+        prev = [l for l in lines[:line_no] if l.strip()]
+        if prev and 'credit memo' in prev[-1].lower():
+            add(m.group(1), m.group(3), date=m.group(2), typ='Credit Memo', line_idx=line_no)
+
+    # S2: Explicit INV/Invoice label — "INV# 12069891 Due 04/27/2026 481.90"
+    # "Invoice #97128: 382.90", "INV-70432 $130.89", "Invoice #INV4864806 $98.62"
+    # Guard: invoice ID must NOT look like an amount
     INV_PAT = re.compile(
         r'(?:Invoice|INV)[#\s\.\-]+(?:INV[#\-\s]?)?([A-Z]?\d[A-Z0-9\-]*)[\s:,\.]*'
+        r'(?:Due\s+' + DATE + r'\s+)?'
         r'(?:Orig(?:inal)?\.?\s+Amount\s+)?'
         r'\$?\s*(-?\s*\(?\d[\d,]*\.\d{2}\)?)', re.I)
     CM_PAT = re.compile(
         r'Credit[_ ]?Memo[#\s\.\-]+([A-Z]?\d[A-Z0-9\-]*)[\s:,\.]*'
-        r'\$?\s*(-?\(?\d[\d,]*\.\d{2}\)?)', re.I)
+        r'(?:' + DATE + r'\s+)?'
+        r'\$?\s*(-?\s*\(?\d[\d,]*\.\d{2}\)?)', re.I)
 
     for i, line in enumerate(lines):
+        if i in inv_lines: continue
         for m in INV_PAT.finditer(line):
-            add(m.group(1).rstrip('.'), m.group(2), line_idx=i)
-            inv_lines.add(i)
-            break  # only first match per line
+            inv_id = m.group(1).rstrip('.')
+            if not looks_like_amount(inv_id):
+                add(inv_id, m.group(2), line_idx=i)
+                inv_lines.add(i)
+                break
         if i not in inv_lines:
             m = CM_PAT.search(line)
-            if m:
+            if m and not looks_like_amount(m.group(1)):
                 v = clean_amt(m.group(2))
                 if v: add(m.group(1), -abs(v), typ='Credit Memo', line_idx=i)
 
-    # S2: GFS-style tabular — long number + date + Invoice/Credit + optional text + FIRST amount
-    # "9033136729 03/10/2026 Invoice $ 3,269.46 $ 3,269.46"
-    # "9034091512 04/06/2026 Invoice THE LONGEST $ 260.54 $ 260.54"
-    # "2003236479 03/14/2026 Credit 6010790238 -$ 14.81 -$ 14.81"
+    # S3: US Paper format — DATE Invoice/Credit_Memo NUMBER DATE AMOUNT
+    # "04/10/2026 Invoice 4936 04/25/2026 1,555.38 1,555.38"
+    # "04/15/2026 Credit Memo 5011 04/15/2026 -69.49"
+    USP_PAT = re.compile(
+        rf'({DATE})\s+(Invoice|Credit\s*Memo)\s+(\d+)\s+{DATE}\s+'
+        r'(-?[\d,]+\.\d{2})', re.I)
+    for m in USP_PAT.finditer(t):
+        line_no = t[:m.start()].count('\n')
+        if line_no in inv_lines: continue
+        typ = 'Credit Memo' if 'credit' in m.group(2).lower() else 'Invoice'
+        v = clean_amt(m.group(4))
+        if typ == 'Credit Memo' and v and v > 0: v = -v
+        if v is not None: add(m.group(3), str(v), date=m.group(1), typ=typ, line_idx=line_no)
+
+    # S4: GFS format — long number + date + Invoice/Credit + optional text + $ amount
+    # "9033136729 03/10/2026 Invoice $ 3,269.46"
+    # "9034091512 04/06/2026 Invoice THE LONGEST $ 260.54"
+    # "2003236479 03/14/2026 Credit 6010790238 -$ 14.81"
     GFS_PAT = re.compile(
         rf'^\s*(\d{{7,12}})\s+({DATE})\s+(Invoice|Credit)\s+.*?'
         r'(-?\s*\$\s*\(?\d[\d,]*\.\d{2}\)?)', re.I | re.M)
@@ -460,7 +501,7 @@ def parse_generic(t):
         typ = 'Credit Memo' if m.group(3).lower() == 'credit' else 'Invoice'
         add(inv, m.group(4), date=m.group(2), typ=typ, line_idx=line_no)
 
-    # S3: Hachette/aging — [code] Date + 7-12 digit + ... + amount
+    # S5: Hachette/aging — [code] DATE 7-12digit ... amounts
     for i, line in enumerate(lines):
         if i in inv_lines: continue
         m = re.search(rf'(?:^|\s)({DATE})\s+(\d{{7,12}})\b', line.strip())
@@ -469,7 +510,7 @@ def parse_generic(t):
             if amts:
                 add(m.group(2), amts[-1], date=m.group(1), line_idx=i)
 
-    # S4: Edward Don — 10-digit CustomerID + 10-digit InvoiceID + month date year + USD
+    # S6: Edward Don — 10-digit CustomerID + 10-digit InvoiceID + month date + USD
     EDDON_PAT = re.compile(
         r'\d{10}\s+(\d{10})\s+(\w+\s+\d{1,2}\s+\d{4})\s+'
         r'(?:\S+\s+)?\w+\s+\d{1,2}\s+\d{4}\s+'
@@ -477,14 +518,36 @@ def parse_generic(t):
     for m in EDDON_PAT.finditer(t):
         add(m.group(1).lstrip('0'), m.group(3), date=m.group(2))
 
-    # S5: Samuels/ledger — date + single letter (I/C/P) + number + amount
-    SAM_PAT = re.compile(rf'({DATE})\s+[IiCcPp]\s+(\d{{5,}})\s+([\d,]+\.\d{{2}})')
+    # S7: Samuels/ledger — DATE single-letter-type NUMBER [optional PO#] AMOUNT[-]
+    # "03/24/26 I 487247 62.99"  and  "07/21/25 C 421273 529345 204.75-"
+    # S7: Samuels/ledger — DATE TYPE NUMBER [optional PO#] AMOUNT[-]
+    # I=Invoice, C=Credit (reduces balance), P=Payment (reduces balance)
+    # All C and P lines are treated as Credit Memo (negative) to give correct net total
+    SAM_PAT = re.compile(rf'({DATE})\s+([ICPicp])\s+(\d{{5,}})(?:\s+\d+)?\s+(\d[\d,]*\.\d{{2}})(-?)')
     for m in SAM_PAT.finditer(t):
-        c = m.group(0)[len(m.group(1)):].strip()[0].upper()
-        add(m.group(2), m.group(3), date=m.group(1),
-            typ='Invoice' if c == 'I' else 'Credit Memo')
+        letter = m.group(2).upper()
+        amt_str = m.group(4)
+        is_neg = m.group(5) == '-' or letter in ('C', 'P')
+        v = float(amt_str.replace(',',''))
+        if is_neg: v = -v
+        # I = Invoice, C/P = Credit Memo (negative, reduces balance)
+        typ = 'Invoice' if letter == 'I' else 'Credit Memo'
+        line_no = t[:m.start()].count('\n')
+        if line_no not in inv_lines:
+            add(m.group(3), v, date=m.group(1), typ=typ, line_idx=line_no)
 
-    # S6: Last resort — any line with $ amount not yet processed
+    # S7b: Samuels CASH payment line — "01/02/26 P CASH 106.20-"
+    DATE_STR = r'(?:\d{1,2}[/\.\-]\d{1,2}[/\.\-]\d{2,4})'
+    CASH_PAT = re.compile(rf'({DATE_STR})\s+P\s+CASH\s+(\d[\d,]*\.\d{{2}})-')
+    cash_inv_n = 0
+    for m in CASH_PAT.finditer(t):
+        cash_inv_n += 1
+        line_no = t[:m.start()].count('\n')
+        if line_no not in inv_lines:
+            add(f'CASH{cash_inv_n}', f'-{m.group(2)}', date=m.group(1),
+                typ='Credit Memo', line_idx=line_no)
+
+    # S8: Last resort — $amount lines not yet processed
     for i, line in enumerate(lines):
         if i in inv_lines: continue
         if re.search(r'\$[\d,]+\.\d{2}', line):
@@ -492,7 +555,7 @@ def parse_generic(t):
             amts = re.findall(r'\$([\d,]+\.\d{2})', line)
             if nums and amts:
                 for n in nums:
-                    if not is_year(n) and n not in seen:
+                    if not is_year(n) and not looks_like_amount(n) and n not in seen:
                         add(n, amts[0], line_idx=i); break
 
     return rows
