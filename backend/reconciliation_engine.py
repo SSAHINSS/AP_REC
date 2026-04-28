@@ -386,8 +386,8 @@ def parse_service_statement(t):
 
 def parse_generic(t):
     """
-    Universal invoice extractor — works on any vendor format.
-    Fixed: no year-numbers, no double-counting, preserves alphanumeric invoice IDs.
+    Universal invoice extractor — handles any vendor format.
+    Strategies: explicit labels → GFS-style tabular → Hachette/aging → EdDon → Samuels → fallback
     """
     rows = []
     seen = set()
@@ -395,8 +395,8 @@ def parse_generic(t):
 
     def clean_amt(s):
         s = str(s).replace(',','').replace('$','').strip()
-        neg = s.startswith('(') and s.endswith(')')
-        s = s.strip('()').rstrip('-')
+        neg = (s.startswith('(') and s.endswith(')')) or s.startswith('-')
+        s = s.strip('()').lstrip('-').strip()
         try:
             v = float(s)
             return -v if neg else v
@@ -409,10 +409,8 @@ def parse_generic(t):
 
     def add(inv, amt, date='', typ=None, line_idx=None):
         inv = str(inv).strip().rstrip('.')
-        if re.match(r'^\d+$', inv):
-            norm = inv.lstrip('0') or inv
-        else:
-            norm = inv
+        norm = inv.lstrip('0') if re.match(r'^\d+$', inv) else inv
+        norm = norm or inv
         if len(norm) < 3: return
         if is_year(norm): return
         if inv in seen or norm in seen: return
@@ -425,49 +423,68 @@ def parse_generic(t):
 
     lines = t.split('\n')
     DATE = r'(?:\d{1,2}[/\.\-]\d{1,2}[/\.\-]\d{2,4})'
-    AMT  = r'(\(\d[\d,]+\.\d{2}\)|\d[\d,]+\.\d{2})'
 
-    # S1: Explicit Invoice/Credit labels — highest priority
-    # Requires invoice ID starts with a digit (or optional letter then digit)
+    # S1: Explicit "Invoice #NUMBER" or "INV #NUMBER" with amount on same line
+    # Handles: "Invoice #97128: 382.90", "Invoice #INV4864806 $98.62"
+    # "INV #366386. Orig. Amount $90.00", "INV-70432 ... $130.89"
+    INV_PAT = re.compile(
+        r'(?:Invoice|INV)[#\s\.\-]+(?:INV[#\-\s]?)?([A-Z]?\d[A-Z0-9\-]*)[\s:,\.]*'
+        r'(?:Orig(?:inal)?\.?\s+Amount\s+)?'
+        r'\$?\s*(-?\s*\(?\d[\d,]*\.\d{2}\)?)', re.I)
+    CM_PAT = re.compile(
+        r'Credit[_ ]?Memo[#\s\.\-]+([A-Z]?\d[A-Z0-9\-]*)[\s:,\.]*'
+        r'\$?\s*(-?\(?\d[\d,]*\.\d{2}\)?)', re.I)
+
     for i, line in enumerate(lines):
-        m = re.search(
-            r'(?:Invoice|INV)[#\s\.\-]+([A-Z]?\d[A-Z0-9\-]*)[\s:,\.]+.*?'
-            r'(?:Orig(?:inal)?\.?\s+Amount\s+\$?\s*|Amount\s+\$?\s*)?' + AMT, line, re.I)
-        if m:
+        for m in INV_PAT.finditer(line):
             add(m.group(1).rstrip('.'), m.group(2), line_idx=i)
             inv_lines.add(i)
-        m = re.search(r'Credit[_ ]?Memo[#\s\.\-]+([A-Z]?\d[A-Z0-9\-]*)[\s:,\.]+.*?' + AMT, line, re.I)
-        if m:
-            v = clean_amt(m.group(2))
-            if v: add(m.group(1), -abs(v), typ='Credit Memo', line_idx=i)
+            break  # only first match per line
+        if i not in inv_lines:
+            m = CM_PAT.search(line)
+            if m:
+                v = clean_amt(m.group(2))
+                if v: add(m.group(1), -abs(v), typ='Credit Memo', line_idx=i)
 
-    # S2: [optional aging code] Date + 7-12 digit invoice + amount at end of line
+    # S2: GFS-style tabular — long number + date + Invoice/Credit + optional text + FIRST amount
+    # "9033136729 03/10/2026 Invoice $ 3,269.46 $ 3,269.46"
+    # "9034091512 04/06/2026 Invoice THE LONGEST $ 260.54 $ 260.54"
+    # "2003236479 03/14/2026 Credit 6010790238 -$ 14.81 -$ 14.81"
+    GFS_PAT = re.compile(
+        rf'^\s*(\d{{7,12}})\s+({DATE})\s+(Invoice|Credit)\s+.*?'
+        r'(-?\s*\$\s*\(?\d[\d,]*\.\d{2}\)?)', re.I | re.M)
+    for m in GFS_PAT.finditer(t):
+        inv = m.group(1)
+        line_no = t[:m.start()].count('\n')
+        if line_no in inv_lines or is_year(inv): continue
+        typ = 'Credit Memo' if m.group(3).lower() == 'credit' else 'Invoice'
+        add(inv, m.group(4), date=m.group(2), typ=typ, line_idx=line_no)
+
+    # S3: Hachette/aging — [code] Date + 7-12 digit + ... + amount
     for i, line in enumerate(lines):
         if i in inv_lines: continue
-        m = re.search(rf'(?:^|\s)({DATE})\s+(\d{{7,12}})\b.*?' + AMT + r'\s*$', line.strip())
+        m = re.search(rf'(?:^|\s)({DATE})\s+(\d{{7,12}})\b', line.strip())
         if m and not is_year(m.group(2)):
-            add(m.group(2), m.group(3), date=m.group(1), line_idx=i)
+            amts = re.findall(r'(?<!\d)(\d[\d,]*\.\d{2})(?!\d)', line)
+            if amts:
+                add(m.group(2), amts[-1], date=m.group(1), line_idx=i)
 
-    # S3: Long number + date + Invoice/Credit + amount (GFS)
-    for m in re.finditer(
-        rf'(\d{{7,12}})\s+({DATE})\s+(?:Invoice|Credit)(?:\s+\d+)?\s+\$?\s*([\d,]+\.\d{{2}})', t, re.I):
-        if not is_year(m.group(1)):
-            add(m.group(1), m.group(3), date=m.group(2))
-
-    # S4: Edward Don — 10-digit IDs + month-name date + USD
-    for m in re.finditer(
+    # S4: Edward Don — 10-digit CustomerID + 10-digit InvoiceID + month date year + USD
+    EDDON_PAT = re.compile(
         r'\d{10}\s+(\d{10})\s+(\w+\s+\d{1,2}\s+\d{4})\s+'
         r'(?:\S+\s+)?\w+\s+\d{1,2}\s+\d{4}\s+'
-        r'(\(\d[\d,]+\.\d{2}\)|\d[\d,]+\.\d{2})\s+USD', t, re.I):
+        r'(\(?\d[\d,]+\.\d{2}\)?)\s+USD', re.I)
+    for m in EDDON_PAT.finditer(t):
         add(m.group(1).lstrip('0'), m.group(3), date=m.group(2))
 
-    # S5: Samuels/ledger — date + single letter type + number + amount
-    for m in re.finditer(rf'({DATE})\s+[IiCcPp]\s+(\d{{5,}})\s+([\d,]+\.\d{{2}})', t):
+    # S5: Samuels/ledger — date + single letter (I/C/P) + number + amount
+    SAM_PAT = re.compile(rf'({DATE})\s+[IiCcPp]\s+(\d{{5,}})\s+([\d,]+\.\d{{2}})')
+    for m in SAM_PAT.finditer(t):
         c = m.group(0)[len(m.group(1)):].strip()[0].upper()
         add(m.group(2), m.group(3), date=m.group(1),
             typ='Invoice' if c == 'I' else 'Credit Memo')
 
-    # S6: Last resort — $amount lines not already processed, filter years
+    # S6: Last resort — any line with $ amount not yet processed
     for i, line in enumerate(lines):
         if i in inv_lines: continue
         if re.search(r'\$[\d,]+\.\d{2}', line):
