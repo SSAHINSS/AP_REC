@@ -8,6 +8,9 @@ Usage:
     result_bytes, filename, reconciled, skipped = run_reconciliation(gl_path, stmt_paths)
 """
 import os, re, io, shutil, tempfile
+
+ENGINE_VERSION = "v4.1-universal-parser"  # bump this to force Railway cache bust
+print(f"[reconciliation_engine] loaded {ENGINE_VERSION}")
 from datetime import date, datetime
 import pandas as pd
 import pdfplumber
