@@ -948,28 +948,39 @@ def smart_invoice_match(raw_rows, gl, log_fn=None):
     log(f"  smart-match: {len(gl_hit)} GL entries matched from {len(inv_rows)} invoices")
 
     results = []
-    for (vendor, loc_id), grp in gl_hit.groupby(["Vendor name","Location ID"]):
+    # Group by Vendor name only — a single vendor invoice can be split across
+    # multiple Location IDs in the GL (e.g. allocated to different cost centers).
+    # The amount lookup must sum across all locations for that vendor.
+    for vendor, grp in gl_hit.groupby("Vendor name"):
         gl_docs = set(grp["Document number"].tolist())
         sub = [r for r in inv_rows
                if any(v in gl_docs for v in _gen_variants(r["Invoice"]))]
 
-        if sub:
-            total_inv = len(inv_rows)
-            if total_inv <= 2:
-                min_match = 1
-            else:
-                min_match = max(2, int(total_inv * 0.20))
-            if len(sub) < min_match:
-                log(f"    ↳ skipping {vendor} / {loc_id}: {len(sub)}/{total_inv} (below threshold)")
-                continue
-            # Build a readable label — skip stop words like "The", "A", "An", "Of"
-            STOPS = {"THE", "A", "AN", "OF", "&"}
-            words = [w for w in vendor.split() if w.upper() not in STOPS]
-            short_name = (words[0] if words else vendor.split()[0]).rstrip(',.')
-            label = f"{loc_id} {short_name}"[:31]
-            log(f"    → {vendor} / {loc_id}: {len(sub)} invoices")
-            results.append({"label": label, "rows": sub,
-                             "vendor": vendor, "loc_id": loc_id})
+        if not sub: continue
+
+        total_inv = len(inv_rows)
+        if total_inv <= 2:
+            min_match = 1
+        else:
+            min_match = max(2, int(total_inv * 0.20))
+        if len(sub) < min_match:
+            log(f"    ↳ skipping {vendor}: {len(sub)}/{total_inv} (below threshold)")
+            continue
+
+        # Pick the dominant location for sheet labeling — most matched invoices win
+        loc_counts = grp["Location ID"].value_counts()
+        dominant_loc = loc_counts.index[0] if len(loc_counts) else ""
+        all_locs = sorted(set(grp["Location ID"].tolist()))
+
+        # Build a readable label — skip stop words like "The", "A", "An", "Of"
+        STOPS = {"THE", "A", "AN", "OF", "&"}
+        words = [w for w in vendor.split() if w.upper() not in STOPS]
+        short_name = (words[0] if words else vendor.split()[0]).rstrip(',.')
+        label = f"{dominant_loc} {short_name}"[:31]
+        log(f"    → {vendor}: {len(sub)} invoices across {len(all_locs)} loc(s) [{', '.join(all_locs[:3])}{'...' if len(all_locs) > 3 else ''}]")
+        results.append({"label": label, "rows": sub,
+                         "vendor": vendor, "loc_id": dominant_loc,
+                         "all_locs": all_locs})
 
     return results
 
@@ -1163,18 +1174,20 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
         """
         smart = smart_invoice_match(rows, gl, log)
         if smart and len(smart) == 1:
-            # Single vendor/location identified — pass ALL rows (including payments
-            # and Missing-in-GL invoices) so the sheet is complete and Layer 1 reconciles.
+            # Single vendor identified — pass ALL rows (including payments and
+            # Missing-in-GL invoices) so the sheet is complete and Layer 1 reconciles.
+            # Pass empty locs to glk so amounts SUM across all locations for the vendor
+            # (a single invoice may be allocated across multiple cost centers).
             sg = smart[0]
-            do(sg["label"], rows, sg["vendor"], [sg["loc_id"]], fn,
+            do(sg["label"], rows, sg["vendor"], [], fn,
                vendor_stated_total=stmt_total,
                vendor_display=sg["vendor"],
                entity_display=sg["loc_id"],
                stmt_date=stmt_date)
         elif smart:
-            # Multi-vendor statement — split into per-vendor sheets, no per-sheet vendor total
+            # Multi-vendor statement — split into per-vendor sheets
             for sg in smart:
-                do(sg["label"], sg["rows"], sg["vendor"], [sg["loc_id"]], fn,
+                do(sg["label"], sg["rows"], sg["vendor"], [], fn,
                    vendor_stated_total=None,
                    vendor_display=sg["vendor"],
                    entity_display=sg["loc_id"],
