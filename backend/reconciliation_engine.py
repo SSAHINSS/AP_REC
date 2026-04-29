@@ -453,8 +453,8 @@ def parse_generic(t):
     # "Invoice #97128: 382.90", "INV-70432 $130.89", "Invoice #INV4864806 $98.62"
     # Guard: invoice ID must NOT look like an amount
     INV_PAT = re.compile(
-        r'(?:Invoice|INV)[#\s\.\-]+(?:INV[#\-\s]?)?([A-Z]?\d[A-Z0-9\-]*)[\s:,\.]*'
-        r'(?:Due\s+' + DATE + r'\s+)?'
+        r'(?:Invoice|INV)\s*[#\.\-]+\s*(?:INV[#\-\s]?)?([A-Z]?\d[A-Z0-9\-]*)'
+        r'.*?'
         r'(?:Orig(?:inal)?\.?\s+Amount\s+)?'
         r'\$?\s*(-?\s*\(?\d[\d,]*\.\d{2}\)?)', re.I)
     CM_PAT = re.compile(
@@ -490,19 +490,29 @@ def parse_generic(t):
         if typ == 'Credit Memo' and v and v > 0: v = -v
         if v is not None: add(m.group(3), str(v), date=m.group(1), typ=typ, line_idx=line_no)
 
-    # S4: GFS format — long number + date + Invoice/Credit + optional text + $ amount
-    # "9033136729 03/10/2026 Invoice $ 3,269.46"
-    # "9034091512 04/06/2026 Invoice THE LONGEST $ 260.54"
-    # "2003236479 03/14/2026 Credit 6010790238 -$ 14.81"
+    # S4: GFS format — long number + date + Invoice/Credit + optional text + $ amounts
+    # Use the LAST $ amount = Balance Due (what is actually owed)
+    # "871201520 02/26/2026 Invoice 871201520 $ 270.45 $ 175.27" → $175.27
+    # "9033136729 03/10/2026 Invoice $ 3,269.46 $ 3,269.46" → $3,269.46
+    # "2003236479 03/14/2026 Credit 6010790238 -$ 14.81 -$ 14.81" → -$14.81
     GFS_PAT = re.compile(
-        rf'^\s*(\d{{7,12}})\s+({DATE})\s+(Invoice|Credit)\s+.*?'
-        r'(-?\s*\$\s*\(?\d[\d,]*\.\d{2}\)?)', re.I | re.M)
+        rf'^\s*(\d{{7,12}})\s+({DATE})\s+(Invoice|Credit)\b', re.I | re.M)
     for m in GFS_PAT.finditer(t):
         inv = m.group(1)
         line_no = t[:m.start()].count('\n')
         if line_no in inv_lines or is_year(inv): continue
+        line_end = t.find('\n', m.end())
+        rest = t[m.end():line_end] if line_end != -1 else t[m.end():]
+        # Find all dollar amounts, take the LAST one (Balance Due)
+        all_amts = re.findall(r'(-?\s*\$\s*)(\(?)([\d,]+\.\d{2})(\)?)', rest)
+        if not all_amts: continue
+        prefix, open_p, digits, close_p = all_amts[-1]
+        v = float(digits.replace(',', ''))
         typ = 'Credit Memo' if m.group(3).lower() == 'credit' else 'Invoice'
-        add(inv, m.group(4), date=m.group(2), typ=typ, line_idx=line_no)
+        if '-' in prefix or (open_p and close_p) or typ == 'Credit Memo':
+            v = -v
+        add(inv, v, date=m.group(2), typ=typ, line_idx=line_no)
+
 
     # S5: Hachette/aging — [code] DATE 7-12digit ... amounts
     for i, line in enumerate(lines):
@@ -577,20 +587,20 @@ def parse_wrights(t):
     return R
 
 PARSERS = {
-    "BUCCANEER":parse_buccaneer,"CKS BAR":parse_cks,"CKS":parse_cks,
-    "ED DON":parse_edward_don,"ROMANOS COF BAR":parse_romanos,"ROMANOS":parse_romanos,
-    "CINTAS":parse_cintas,"CW":parse_chefs_warehouse,"DEX IMAGING":parse_dex_imaging,
-    "GOURMET FOODS":parse_gourmet_foods,"HALPERNS":parse_halperns,
-    "PIPER FIRE":parse_piper_fire,"PROPANE NINJA":parse_propane_ninja,
-    "MR GREENS":parse_mr_greens,"BUSH BROS":parse_bush_bros,
-    "US PAPER":parse_us_paper,"FRANK GAY":parse_frank_gay,
-    "PENGUIN":parse_penguin,"GFS":parse_gfs,"COF BAR":parse_gfs,"AMAZON":None,
-    "ZWIESEL FORTESSA":parse_fortessa,"FORTESSA":parse_fortessa,
-    "UNIFIRST":parse_unifirst,
-    "CULIGAN":parse_culligan,"CULLIGAN":parse_culligan,
-    "SAMUELS":parse_samuels,
+    "BUCCANEER":parse_generic,"CKS BAR":parse_generic,"CKS":parse_generic,
+    "ED DON":parse_generic,"ROMANOS COF BAR":parse_generic,"ROMANOS":parse_generic,
+    "CINTAS":parse_generic,"CW":parse_generic,"DEX IMAGING":parse_generic,
+    "GOURMET FOODS":parse_generic,"HALPERNS":parse_generic,
+    "PIPER FIRE":parse_generic,"PROPANE NINJA":parse_generic,
+    "MR GREENS":parse_generic,"BUSH BROS":parse_generic,
+    "US PAPER":parse_us_paper,"FRANK GAY":parse_generic,
+    "PENGUIN":parse_generic,"GFS":parse_generic,"COF BAR":parse_generic,"AMAZON":None,
+    "ZWIESEL FORTESSA":parse_generic,"FORTESSA":parse_generic,
+    "UNIFIRST":parse_generic,
+    "CULIGAN":parse_generic,"CULLIGAN":parse_generic,
+    "SAMUELS":parse_generic,
     "WRI":parse_wrights,
-    "COZZINI":parse_cozzini,
+    "COZZINI":parse_generic,
 }
 
 # ══════════════════════════════════════════════════════════════════════════
