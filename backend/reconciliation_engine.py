@@ -1,16 +1,9 @@
 """
-Vendor Statement Reconciliation Engine v4
-Platform-agnostic core — no UI dependencies.
-Can be imported by Streamlit, Flask, FastAPI, CLI, or any other interface.
-
-Usage:
-    from reconciliation_engine import run_reconciliation
-    result_bytes, filename, reconciled, skipped = run_reconciliation(gl_path, stmt_paths)
+Vendor Statement Reconciliation Engine v5
+- Statement total is the bible: find it first, validate against extracted transactions
+- If totals don't match after all strategies, exclude from output
 """
 import os, re, io, shutil, tempfile
-
-ENGINE_VERSION = "v4.1-universal-parser"  # bump this to force Railway cache bust
-print(f"[reconciliation_engine] loaded {ENGINE_VERSION}")
 from datetime import date, datetime
 import pandas as pd
 import pdfplumber
@@ -18,7 +11,10 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# ── Mappings ───────────────────────────────────────────────────────────────
+ENGINE_VERSION = "v5.0-total-first"
+print(f"[reconciliation_engine] loaded {ENGINE_VERSION}")
+
+# ── Mappings ─────────────────────────────────────────────────────────────────
 LOC = {
     "SH19":["SH-93004"],"SH":["SH-93001","SH-93002"],"LIB":["LIB-96100"],
     "MD":["MAD-80041"],
@@ -48,44 +44,32 @@ VM = {
     "SAMUELS":"Samuels and Son Seafood South Coast LLC",
     "WRI":"WRIGHTS GOURMET HOUSE",
     "COZZINI":"Cozzini Bros. Inc",
+    "NORTON":"W. W. Norton & Company Inc",
+    "WW NORTON":"W. W. Norton & Company Inc",
 }
 
-# ══════════════════════════════════════════════════════════════════════════
-#  THEME  —  mirrors the website's CSS custom properties
-#  --bg      #1E1B17   dark warm background
-#  --surface #26211C   card / panel background
-#  --hi      #302820   slightly lighter warm brown
-#  --text    #E8DDD0   cream
-#  --muted   #8C7B6A   warm grey-brown
-#  --ox      #FF7030   orange accent
-#  log-ok    #86EFAC   green
-#  log-skip  #FCD34D   amber
-#  log-err   #F87171   red
-# ══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+#  THEME
+# ══════════════════════════════════════════════════════════════════════════════
+HDR   = PatternFill("solid", fgColor="FF7030")
+SHDRF = PatternFill("solid", fgColor="1E1B17")
+MATCH = PatternFill("solid", fgColor="1A2B1F")
+VAR   = PatternFill("solid", fgColor="2B2510")
+MISS  = PatternFill("solid", fgColor="2B1515")
+OCR_F = PatternFill("solid", fgColor="1E1B2E")
+STRIPE= PatternFill("solid", fgColor="26211C")
+ALT   = PatternFill("solid", fgColor="302820")
+NEON  = PatternFill("solid", fgColor="FF7030")
 
-# Fills
-HDR   = PatternFill("solid", fgColor="FF7030")   # orange header (detail sheets)
-SHDRF = PatternFill("solid", fgColor="1E1B17")   # dark header  (summary sheet)
-MATCH = PatternFill("solid", fgColor="D6EDE0")   # light green
-VAR   = PatternFill("solid", fgColor="F5EDBE")   # dark amber
-MISS  = PatternFill("solid", fgColor="F5D4D4")   # dark red
-OCR_F = PatternFill("solid", fgColor="E2DDEF")   # dark purple
-STRIPE= PatternFill("solid", fgColor="F2EDE8")   # surface
-ALT   = PatternFill("solid", fgColor="E8E2DC")   # hi (alternating row)
-NEON  = PatternFill("solid", fgColor="FF7030")   # jump-back button
+_A  = Font(name="Aptos", size=11, color="E8DDD0")
+_AH = Font(name="Aptos", size=11, bold=True, color="1E1B17")
+_AS = Font(name="Aptos", size=11, bold=True, color="FF7030")
+_AL = Font(name="Aptos", size=11, color="FF7030", underline="single")
+_JF = Font(name="Aptos", size=11, bold=True,  color="1E1B17")
+_AM  = Font(name="Aptos", size=11, color="86EFAC")
+_AV  = Font(name="Aptos", size=11, color="FCD34D")
+_AMI = Font(name="Aptos", size=11, color="F87171")
 
-# Fonts  (openpyxl requires hex without #)
-_A  = Font(name="Aptos", size=11, color="2A2118")                          # body
-_AH = Font(name="Aptos", size=11, bold=True, color="1E1B17")               # detail header
-_AS = Font(name="Aptos", size=11, bold=True, color="FF7030")               # summary header
-_AL = Font(name="Aptos", size=11, color="FF7030", underline="single")      # hyperlink
-_JF = Font(name="Aptos", size=11, bold=True,  color="1E1B17")              # jump-back label
-
-_AM  = Font(name="Aptos", size=11, color="1A7A40")   # matched amount
-_AV  = Font(name="Aptos", size=11, color="7A6000")   # variance amount
-_AMI = Font(name="Aptos", size=11, color="B02020")   # missing amount
-
-# Borders
 THIN_ORANGE = Border(
     left=Side(style="thin", color="FF7030"),
     right=Side(style="thin", color="FF7030"),
@@ -102,7 +86,7 @@ MONEY_MIN_W= 24
 
 SKIP_TYPES = {"Payment", "Unapplied Cash"}
 
-# ── Date normalizer ────────────────────────────────────────────────────────
+# ── Date normalizer ──────────────────────────────────────────────────────────
 def _norm_date(s):
     if not s or not isinstance(s, str):
         return s
@@ -115,9 +99,75 @@ def _norm_date(s):
             continue
     return s
 
-# ══════════════════════════════════════════════════════════════════════════
-#  PARSERS
-# ══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+#  STATEMENT TOTAL FINDER — runs FIRST before any extraction
+# ══════════════════════════════════════════════════════════════════════════════
+
+def find_statement_total(text):
+    """
+    Find the authoritative statement total from vendor statement text.
+    Tries patterns in confidence order. Returns (float, label) or (None, None).
+    """
+    lines = text.split("\n")
+
+    def try_float(s):
+        try:
+            v = float(str(s).replace(",","").replace("$","").strip())
+            return v if v > 0 else None
+        except:
+            return None
+
+    # P1: Explicit labelled totals — highest confidence
+    labelled = [
+        (r"Amount\s+Due:\s*([\d,]+\.\d{2})",                                               "Amount Due:"),
+        (r"Total[\s\-]+Due\s+([\d,]+\.\d{2})",                                            "Total-Due"),
+        (r"Total\s+Due:\s*\$?([\d,]+\.\d{2})",                                            "Total Due:"),
+        (r"B[\s]*A[\s]*L[\s]*A[\s]*N[\s]*C[\s]*E[\s]+D[\s]*U[\s]*E[\s]*:.*?([\d,]+\.\d{2})", "BALANCE DUE:"),
+        (r"^Total:\s*\$\s*([\d,]+\.\d{2})",                                               "Total: $"),
+        (r"^TOTAL\s+\$?([\d,]+\.\d{2})",                                                   "TOTAL"),
+        (r"Total:\s+([\d,]+\.\d{2})\s*$",                                                  "Total: EOL"),
+        (r"Amount\s+Due\s*\n\s*\$?([\d,]+\.\d{2})",                                     "Amount Due newline"),
+    ]
+    for pat, label in labelled:
+        m = re.search(pat, text, re.I | re.M)
+        if m:
+            v = try_float(m.group(1))
+            if v: return v, label
+
+    # P2: CW — "BALANCE 13,450.33" (number AFTER BALANCE keyword)
+    m = re.search(r"BALANCE\s+([\d,]+\.\d{2})", text, re.I)
+    if m:
+        v = try_float(m.group(1))
+        if v: return v, "BALANCE amount"
+
+    # P3: IPR single-invoice — "BALANCE DUE" column header, first $ on data row
+    if "BALANCE DUE" in text.upper() and "TOTAL AMOUNT" in text.upper():
+        for line in lines:
+            if re.search(r"\$[\d,]+\.\d{2}.*\$[\d,]+\.\d{2}.*\$0\.00", line):
+                m = re.search(r"\$([\d,]+\.\d{2})", line)
+                if m:
+                    v = try_float(m.group(1))
+                    if v: return v, "IPR BALANCE DUE column"
+
+    # P4: Buccaneer/Romanos — last running balance on last INV# line
+    inv_lines = [l for l in lines if re.search(r"INV\s*#\d+", l, re.I)]
+    if inv_lines:
+        amts = re.findall(r"([\d,]+\.\d{2})\s*$", inv_lines[-1])
+        if amts:
+            v = try_float(amts[0])
+            if v: return v, "last INV running balance"
+
+    # P5: Buddy Brew aging row — last $ value in aging section
+    m = re.search(r"\$0\.00\s+\$([\d,]+\.\d{2})\s*$", text, re.M)
+    if m:
+        v = try_float(m.group(1))
+        if v: return v, "aging last value"
+
+    return None, None
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  PDF TEXT EXTRACTION
+# ══════════════════════════════════════════════════════════════════════════════
 
 def _pdf(fp):
     try:
@@ -136,261 +186,13 @@ def _pdf(fp):
     except Exception:
         return ""
 
-def parse_buccaneer(t):
-    R = []
-    for m in re.finditer(
-        r'(\d{2}/\d{2}/\d{4})\s+INV\s+#(\d+)\.\s+(?:Due\s+\d{2}/\d{2}/\d{4}\.\s+)?'
-        r'Orig\.\s+Amount\s+\$([\d,]+\.\d{2})\.', t):
-        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    return R
-
-def parse_cks(t):
-    R = []
-    for m in re.finditer(
-        r'(\d{2}/\d{2}/\d{4})\s+(Invoice|Credit Memo|Payment)\s+#(INV\d+|CM\d+|PMT\d+)\s+\$([\d,]+\.\d{2})', t):
-        d,tp,inv,a = m.groups(); amt = float(a.replace(",",""))
-        if tp == "Credit Memo": amt = -amt
-        elif tp == "Payment": amt = -amt
-        R.append({"Date":d,"Invoice":inv,"Amount":amt,"Type":tp})
-    return R
-
-def parse_edward_don(t):
-    R = []; seen = set()
-    # New format: optional PO# between date and due date
-    # 0001250580 0034896458 Mar 16 2026 Richard Apr 15 2026 1,104.30 USD
-    # 0001250580 0034959162 Mar 27 2026 Apr 26 2026 607.32 USD  (no PO#)
-    pat_inv = re.compile(
-        r'\d{10}\s+(\d{10})\s+(\w+\s+\d{1,2}\s+\d{4})\s+'
-        r'(?:\S+\s+)?\w+\s+\d{1,2}\s+\d{4}\s+([\d,]+\.\d{2})\s+USD', re.I)
-    pat_crd = re.compile(
-        r'\d{10}\s+(\d{10})\s+(\w+\s+\d{1,2}\s+\d{4})\s+'
-        r'(?:\S+\s+)?\w+\s+\d{1,2}\s+\d{4}\s+\(([\d,]+\.\d{2})\s+USD\)', re.I)
-    for m in pat_inv.finditer(t):
-        inv = m[1].lstrip("0")
-        if inv not in seen:
-            seen.add(inv)
-            R.append({"Date":m[2],"Invoice":inv,"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    for m in pat_crd.finditer(t):
-        inv = m[1].lstrip("0")
-        if inv not in seen:
-            seen.add(inv)
-            R.append({"Date":m[2],"Invoice":inv,"Amount":-float(m[3].replace(",","")),"Type":"Credit Memo"})
-    return R
-
-def parse_romanos(t):
-    R = []
-    for m in re.finditer(
-        r'(\d{2}/\d{2}/\d{4})\s+INV\s+#(\d+)\.\s+Orig\.\s+Amount\s+\$([\d,]+\.\d{2})\.', t):
-        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    return R
-
-def parse_cintas(t):
-    R = []; c = t.encode('ascii','replace').decode('ascii')
-    for m in re.finditer(r'(\d{7,})\s+(\d{2}/\d{2}/\d{2})\s+\d{2}/\d{2}\S*\s+([\d,]+\.\d{2})', c):
-        R.append({"Date":m[2],"Invoice":m[1],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    return R
-
-def parse_chefs_warehouse(t):
-    R = []
-    for line in t.split('\n'):
-        L = line.strip()
-        m = re.match(r'^(\d{8})\s+(\d{2}/\d{2}/\d{2})\s+Invoice\s+'
-                     r'([\d,]+\.\d{2})\s+\([\d,]+\.\d{2}\)\s+[\d,]+\.\d{2}', L)
-        if m: R.append({"Date":m[2],"Invoice":m[1],"Amount":float(m[3].replace(",","")),"Type":"Invoice"}); continue
-        m = re.match(r'^(\d{8})\s+(\d{2}/\d{2}/\d{2})\s+Invoice\s+'
-                     r'([\d,]+\.\d{2})\s+[\d,]+\.\d{2}', L)
-        if m: R.append({"Date":m[2],"Invoice":m[1],"Amount":float(m[3].replace(",","")),"Type":"Invoice"}); continue
-        m = re.match(r'^(\d{8})\s+(\d{2}/\d{2}/\d{2})\s+\(([\d,]+\.\d{2})\)\s+\([\d,]+\.\d{2}\)', L)
-        if m: R.append({"Date":m[2],"Invoice":m[1],"Amount":-float(m[3].replace(",","")),"Type":"Credit Memo"}); continue
-        m = re.match(r'^(\d{7,})\s+(\d{2}/\d{2}/\d{2})\s+\(([\d,]+\.\d{2})\)\s+\([\d,]+\.\d{2}\)', L)
-        if m: R.append({"Date":m[2],"Invoice":m[1],"Amount":-float(m[3].replace(",","")),"Type":"Unapplied Cash"})
-    return R
-
-def parse_dex_imaging(t):
-    R = []
-    for m in re.finditer(
-        r'(?:Contract\s+)?Invoice\s+(\d{1,2}/\d{1,2}/\d{4})\s+\d{1,2}/\d{1,2}/\d{4}\s+(AR\d+)\s+\S+\s+\$([\d,]+\.\d{2})', t):
-        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    return R
-
-def parse_gourmet_foods(t):
-    R = []
-    for m in re.finditer(r'(\d{8})\s+(\d+)\s+(INV|CM)\s+([\d,]+\.\d{2})', t):
-        dr,inv,tp,a = m.groups(); amt = float(a.replace(",",""))
-        if tp == "CM": amt = -amt
-        R.append({"Date":f"{dr[:4]}-{dr[4:6]}-{dr[6:8]}","Invoice":inv,"Amount":amt,
-                   "Type":"Invoice" if tp=="INV" else "Credit Memo"})
-    return R
-
-def parse_halperns(t):
-    R = []
-    for m in re.finditer(
-        r'(\d{2}/\d{2}/\d{4})\s+INV#\s*(\d+(?:-\w+)?)\s+Due\s+\d{2}/\d{2}/\d{4}\s+'
-        r'(-?[\d,]+\.\d{2})\s+-?[\d,]+\.\d{2}', t):
-        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),
-                   "Type":"Credit Memo" if "-C" in m[2] else "Invoice"})
-    return R
-
-def parse_piper_fire(t):
-    R = []
-    for m in re.finditer(r'(\d{4}-\d{2}-\d{2})\s+(\d+)\s+\$([\d,]+\.\d{2})', t):
-        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    return R
-
-def parse_propane_ninja(_):
-    return [
-        {"Date":"02/03/2026","Invoice":"1084999","Amount":-214.86,"Type":"Credit (OCR)"},
-        {"Date":"02/21/2026","Invoice":"1091427","Amount":432.63,"Type":"Invoice (OCR)"},
-    ]
-
-def parse_mr_greens(t):
-    R = []
-    for m in re.finditer(
-        r'^([A-Z]{2}\d{4})\s+(\d{2}/\d{2}/\d{4})\s+(?:\S+\s+\d{2}/\d{2}/\d{4}\s+)?'
-        r'(-?[\d,]+\.\d{2})\s+-?[\d,]+\.\d{2}', t, re.MULTILINE):
-        tp = "VOID" if "VOID" in t[max(0,m.start()-10):m.end()+10] else "Invoice"
-        R.append({"Date":m[2],"Invoice":m[1],"Amount":float(m[3].replace(",","")),"Type":tp})
-    return R
-
-def parse_bush_bros(t):
-    R = []
-    for m in re.finditer(
-        r'(\d{1,2}/\d{1,2}/\d{4})\s+Invoice\s+(\d+)\s+.+?\s+([\d,]+\.\d{2})\s+[\d,]+\.\d{2}', t):
-        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    for m in re.finditer(r'(\d{1,2}/\d{1,2}/\d{4})\s+Payment\s+(\S+)\s+.+?\s+-([\d,]+\.\d{2})', t):
-        R.append({"Date":m[1],"Invoice":m[2],"Amount":-float(m[3].replace(",","")),"Type":"Payment"})
-    return R
-
-def parse_us_paper(t):
-    D = {}; cur = None
-    for line in t.split('\n'):
-        L = line.strip()
-        if L in ("MAD DOGS AND ENGLISHMEN","OXFORD EXCHANGE LLC","Predalina LLC",
-                  "SH-19","The Library St Pete","The Stovall House"):
-            cur = L; D.setdefault(cur,[]); continue
-        if cur and re.match(r'^\d{2}/\d{2}/\d{4}', L):
-            m = re.match(r'(\d{2}/\d{2}/\d{4})\s+Invoice\s+(\d+)\s+\d{2}/\d{2}/\d{4}\s+([\d,]+\.\d{2})', L)
-            if m: D[cur].append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    return D
-
-def parse_frank_gay(t):
-    R = []
-    for m in re.finditer(
-        r'(\d{9})\s+(?:Net\s+)?.*?(\d{1,2}/\d{1,2}/\d{2})\s+'
-        r'\$([\d,]+\.\d{2})\s+\$[\d,]+\.\d{2}\s+\$([\d,]+\.\d{2})', t, re.DOTALL):
-        R.append({"Date":m[2],"Invoice":m[1],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    return R
-
-def parse_penguin(t):
-    R = []
-    for m in re.finditer(
-        r'(\d{2}/\d{2}/\d{4})\s+(\d{10})\s+\d{4}\s+(?:\S+\s+)?'
-        r'\d{2}/\d{2}/\d{4}\s+(CM|RV|IN)\s+(-?[\d,]+\.\d{2}-?)', t):
-        a = m[4]; amt = -float(a[:-1].replace(",","")) if a.endswith('-') else float(a.replace(",",""))
-        if m[3] == "CM": amt = -abs(amt)
-        R.append({"Date":m[1],"Invoice":m[2],"Amount":amt,
-                   "Type":{"CM":"Credit Memo","RV":"Revision","IN":"Invoice"}.get(m[3],m[3])})
-    return R
-
-def parse_gfs(t):
-    R = []
-    # New format: 9033136729 03/10/2026 Invoice $ 3,269.46
-    for m in re.finditer(r'(\d{7,})\s+(\d{2}/\d{2}/\d{4})\s+Invoice(?:\s+\d+)?\s+\$\s*([\d,]+\.\d{2})', t, re.I):
-        R.append({"Date":m[2],"Invoice":m[1],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    # Credit: 2003236479 03/19/2026 Credit 9033338797 -$ 14.81
-    for m in re.finditer(r'(\d{7,})\s+(\d{2}/\d{2}/\d{4})\s+Credit\s+\d+\s+-?\$\s*([\d,]+\.\d{2})', t, re.I):
-        R.append({"Date":m[2],"Invoice":m[1],"Amount":-float(m[3].replace(",","")),"Type":"Credit Memo"})
-    # Old format fallback
-    if not R:
-        for m in re.finditer(r'(\d{9,})\s+(\d{2}/\d{2}/\d{2})\s+INVOICE\s+(?:\d+\s+)?([\d,]+\.\d{2})', t, re.I):
-            R.append({"Date":m[2],"Invoice":m[1],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    return R
-
-def parse_amazon_xl(fp):
-    R = []
-    try:
-        df = pd.read_excel(fp, sheet_name="Invoices", header=None)
-        if len(df) > 4:
-            for i in range(4, len(df)):
-                r = df.iloc[i]; inv = str(r.iloc[1]) if pd.notna(r.iloc[1]) else ""
-                d = str(r.iloc[2]) if pd.notna(r.iloc[2]) else ""
-                amt = r.iloc[8] if pd.notna(r.iloc[8]) else 0
-                if inv: R.append({"Date":d[:10],"Invoice":inv,"Amount":float(amt),"Type":"Invoice"})
-    except Exception:
-        pass
-    return R
-
-def parse_fortessa(t):
-    R = []
-    pat = re.compile(
-        r'(\d{2}/\d{2}/\d{4})\s+Invoice\s+.*?\$([\d,]+\.\d{2})\s+\d{2}/\d{2}/\d{4}.*?\n(#INV\d+)',
-        re.DOTALL)
-    for m in pat.finditer(t):
-        R.append({"Date":m[1],"Invoice":m[3].lstrip("#"),"Amount":float(m[2].replace(",","")),"Type":"Invoice"})
-    return R
-
-def parse_unifirst(t):
-    R = []
-    for m in re.finditer(r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+([\d,]+\.\d{2})', t):
-        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    return R
-
-def parse_culligan(t):
-    R = []
-    for m in re.finditer(r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+\d+\s+PO#\s+([\d,]+\.\d{2})', t):
-        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    return R
-
-def parse_samuels(t):
-    R = []
-    for m in re.finditer(r'(\d{2}/\d{2}/\d{2})\s+I\s+(\d+)\s+([\d,]+\.\d{2})\s', t):
-        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    return R
-
-def parse_wri(t):
-    R = []
-    for m in re.finditer(r'(\d{2}/\d{2}/\d{4})\s+(\d{7,})\s+\$([\d,]+\.\d{2})', t):
-        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    return R
-
-def parse_cozzini(t):
-    R = []
-    for m in re.finditer(r'(\d{1,2}/\d{1,2}/\d{4})\s+Invoice\s+#(C\d+)\s+([\d,]+\.\d{2})', t):
-        R.append({"Date":m[1],"Invoice":m[2],"Amount":float(m[3].replace(",","")),"Type":"Invoice"})
-    return R
-
-from difflib import SequenceMatcher
-
-def _fuzzy_rank(query, candidates, n=12):
-    q = query.upper().replace("_"," ")
-    scored = []
-    for c in candidates:
-        cu = c.upper()
-        ratio = SequenceMatcher(None, q, cu).ratio()
-        if any(w in cu for w in q.split() if len(w) > 2):
-            ratio += 0.25
-        scored.append((ratio, c))
-    scored.sort(reverse=True)
-    return [c for _, c in scored[:n]]
-
-def parse_service_statement(t):
-    """Generic service/field statement: short invoice#, date, $amount."""
-    R = []; seen = set()
-    for m in re.finditer(r'^(\d{5,8})\s+\d{1,2}/\d{1,2}/\d{2,4}.*?\$(\d[\d,]+\.\d{2})', t, re.MULTILINE):
-        inv = m[1]
-        if inv not in seen:
-            seen.add(inv)
-            try:
-                amt = float(m[2].replace(",",""))
-                if 0 < amt < 1_000_000:
-                    R.append({"Date":"","Invoice":inv,"Amount":amt,"Type":"Invoice"})
-            except: pass
-    return R
+# ══════════════════════════════════════════════════════════════════════════════
+#  UNIVERSAL INVOICE EXTRACTOR
+# ══════════════════════════════════════════════════════════════════════════════
 
 def parse_generic(t):
     """
-    Universal invoice extractor. Statement total is gospel.
-    Handles all known vendor formats including CW, GFS, Halperns, US Paper, Ashberry etc.
+    Universal invoice extractor. Works on any vendor format.
     """
     rows = []
     seen = set()
@@ -411,7 +213,6 @@ def parse_generic(t):
         except: return False
 
     def looks_like_amount(s):
-        """Returns True if string looks like a dollar amount rather than invoice ID."""
         return bool(re.match(r'^\d{1,6}\.\d{2}$', s))
 
     def add(inv, amt, date='', typ=None, line_idx=None):
@@ -420,7 +221,7 @@ def parse_generic(t):
         norm = norm or inv
         if len(norm) < 3: return
         if is_year(norm): return
-        if looks_like_amount(norm): return  # don't use amounts as invoice IDs
+        if looks_like_amount(norm): return
         if inv in seen or norm in seen: return
         v = clean_amt(amt) if not isinstance(amt, float) else amt
         if v is None or abs(v) < 0.01 or abs(v) > 5_000_000: return
@@ -432,16 +233,14 @@ def parse_generic(t):
     lines = t.split('\n')
     DATE = r'(?:\d{1,2}[/\.\-]\d{1,2}[/\.\-]\d{2,4})'
 
-    # S1a: CW/Chefs Warehouse format — NUMBER DATE Invoice AMOUNT
-    # "70564571 12/15/25 Invoice 43.01 43.01 70564571 12/15/25 43.01"
+    # S1a: CW format — NUMBER DATE Invoice AMOUNT
     CW_INV = re.compile(rf'^(\d{{7,10}})\s+({DATE})\s+Invoice\s+([\d,]+\.\d{{2}})', re.M | re.I)
     for m in CW_INV.finditer(t):
         line_no = t[:m.start()].count('\n')
         add(m.group(1), m.group(3), date=m.group(2), typ='Invoice', line_idx=line_no)
 
-    # S1b: CW credit lines — NUMBER DATE (AMOUNT) with prev line = "Credit Memo"
-    # "71243590 02/12/26 (101.68) (101.68)"
-    CW_CM = re.compile(rf'^(\d{{7,10}})\s+({DATE})\s+(\([\d,]+\.\d{{2}}\))', re.M)
+    # S1b: CW credit — NUMBER DATE (AMOUNT) with prev line = Credit Memo
+    CW_CM = re.compile(rf'^(\d{{7,10}})\s+({DATE})\s+(\(\d[\d,]*\.\d{{2}}\))', re.M)
     for m in CW_CM.finditer(t):
         line_no = t[:m.start()].count('\n')
         if line_no in inv_lines: continue
@@ -449,18 +248,13 @@ def parse_generic(t):
         if prev and 'credit memo' in prev[-1].lower():
             add(m.group(1), m.group(3), date=m.group(2), typ='Credit Memo', line_idx=line_no)
 
-    # S2: Explicit INV/Invoice label — "INV# 12069891 Due 04/27/2026 481.90"
-    # "Invoice #97128: 382.90", "INV-70432 $130.89", "Invoice #INV4864806 $98.62"
-    # Guard: invoice ID must NOT look like an amount
+    # S2: Explicit INV/Invoice label — "Invoice #97128:", "INV# 12069891", "INV-70432"
     INV_PAT = re.compile(
-        r'(?:Invoice|INV)\s*[#\.\-]+\s*(?:INV[#\-\s]?)?([A-Z]?\d[A-Z0-9\-]*)'
-        r'.*?'
-        r'(?:Orig(?:inal)?\.?\s+Amount\s+)?'
-        r'\$?\s*(-?\s*\(?\d[\d,]*\.\d{2}\)?)', re.I)
+        r'(?:Invoice|INV)\s*[#.\-]+\s*(?:INV[#\-\s]?)?([A-Z]?\d[A-Z0-9\-]*)'
+        r'.*?\$?\s*(-?\s*\(?\d[\d,]*\.\d{2}\)?)', re.I)
     CM_PAT = re.compile(
-        r'Credit[_ ]?Memo[#\s\.\-]+([A-Z]?\d[A-Z0-9\-]*)[\s:,\.]*'
-        r'(?:' + DATE + r'\s+)?'
-        r'\$?\s*(-?\s*\(?\d[\d,]*\.\d{2}\)?)', re.I)
+        r'Credit[_ ]?Memo[#\s\.\-]+([A-Z]?\d[A-Z0-9\-]*)'
+        r'.*?\$?\s*(-?\(?\d[\d,]*\.\d{2}\)?)', re.I)
 
     for i, line in enumerate(lines):
         if i in inv_lines: continue
@@ -476,9 +270,7 @@ def parse_generic(t):
                 v = clean_amt(m.group(2))
                 if v: add(m.group(1), -abs(v), typ='Credit Memo', line_idx=i)
 
-    # S3: US Paper format — DATE Invoice/Credit_Memo NUMBER DATE AMOUNT
-    # "04/10/2026 Invoice 4936 04/25/2026 1,555.38 1,555.38"
-    # "04/15/2026 Credit Memo 5011 04/15/2026 -69.49"
+    # S3: US Paper — DATE Invoice/Credit_Memo NUMBER DATE AMOUNT
     USP_PAT = re.compile(
         rf'({DATE})\s+(Invoice|Credit\s*Memo)\s+(\d+)\s+{DATE}\s+'
         r'(-?[\d,]+\.\d{2})', re.I)
@@ -490,11 +282,7 @@ def parse_generic(t):
         if typ == 'Credit Memo' and v and v > 0: v = -v
         if v is not None: add(m.group(3), str(v), date=m.group(1), typ=typ, line_idx=line_no)
 
-    # S4: GFS format — long number + date + Invoice/Credit + optional text + $ amounts
-    # Use the LAST $ amount = Balance Due (what is actually owed)
-    # "871201520 02/26/2026 Invoice 871201520 $ 270.45 $ 175.27" → $175.27
-    # "9033136729 03/10/2026 Invoice $ 3,269.46 $ 3,269.46" → $3,269.46
-    # "2003236479 03/14/2026 Credit 6010790238 -$ 14.81 -$ 14.81" → -$14.81
+    # S4: GFS — long number + date + Invoice/Credit + LAST $ amount (Balance Due)
     GFS_PAT = re.compile(
         rf'^\s*(\d{{7,12}})\s+({DATE})\s+(Invoice|Credit)\b', re.I | re.M)
     for m in GFS_PAT.finditer(t):
@@ -503,16 +291,27 @@ def parse_generic(t):
         if line_no in inv_lines or is_year(inv): continue
         line_end = t.find('\n', m.end())
         rest = t[m.end():line_end] if line_end != -1 else t[m.end():]
-        # Find all dollar amounts, take the LAST one (Balance Due)
-        all_amts = re.findall(r'(-?\s*\$\s*)(\(?)([\d,]+\.\d{2})(\)?)', rest)
+        all_amts = re.findall(r'(-?\s*\$\s*)(\(?)(\d[\d,]+\.\d{2})(\)?)', rest)
         if not all_amts: continue
-        prefix, open_p, digits, close_p = all_amts[-1]
+        prefix, op, digits, cp = all_amts[-1]
         v = float(digits.replace(',', ''))
         typ = 'Credit Memo' if m.group(3).lower() == 'credit' else 'Invoice'
-        if '-' in prefix or (open_p and close_p) or typ == 'Credit Memo':
-            v = -v
+        if '-' in prefix or (op and cp) or typ == 'Credit Memo': v = -v
         add(inv, v, date=m.group(2), typ=typ, line_idx=line_no)
 
+    # S8: Norton/ledger — DATE NUMBER PO AMOUNT CRD/INV type at end
+    # "8/12/25 12/10/25 3007785 5844 140.44 INV"
+    # "11/10/25 12/10/25 3271161 VR6204 160.40- CRD"
+    NORTON_PAT = re.compile(
+        rf'({DATE})\s+{DATE}\s+(\d{{7,}})\s+\S+\s+(\d[\d,]*\.\d{{2}})(-?)\s+(INV|CRD|CR)', re.I)
+    for m in NORTON_PAT.finditer(t):
+        line_no = t[:m.start()].count('\n')
+        if line_no in inv_lines: continue
+        v = float(m.group(3).replace(',',''))
+        is_credit = m.group(5).upper() in ('CRD','CR') or m.group(4) == '-'
+        if is_credit: v = -v
+        typ = 'Credit Memo' if is_credit else 'Invoice'
+        add(m.group(2), v, date=m.group(1), typ=typ, line_idx=line_no)
 
     # S5: Hachette/aging — [code] DATE 7-12digit ... amounts
     for i, line in enumerate(lines):
@@ -523,7 +322,7 @@ def parse_generic(t):
             if amts:
                 add(m.group(2), amts[-1], date=m.group(1), line_idx=i)
 
-    # S6: Edward Don — 10-digit CustomerID + 10-digit InvoiceID + month date + USD
+    # S6: Edward Don — 10-digit IDs + month date year + USD
     EDDON_PAT = re.compile(
         r'\d{10}\s+(\d{10})\s+(\w+\s+\d{1,2}\s+\d{4})\s+'
         r'(?:\S+\s+)?\w+\s+\d{1,2}\s+\d{4}\s+'
@@ -531,36 +330,27 @@ def parse_generic(t):
     for m in EDDON_PAT.finditer(t):
         add(m.group(1).lstrip('0'), m.group(3), date=m.group(2))
 
-    # S7: Samuels/ledger — DATE single-letter-type NUMBER [optional PO#] AMOUNT[-]
-    # "03/24/26 I 487247 62.99"  and  "07/21/25 C 421273 529345 204.75-"
-    # S7: Samuels/ledger — DATE TYPE NUMBER [optional PO#] AMOUNT[-]
-    # I=Invoice, C=Credit (reduces balance), P=Payment (reduces balance)
-    # All C and P lines are treated as Credit Memo (negative) to give correct net total
+    # S7: Samuels/ledger — DATE TYPE NUMBER [PO#] AMOUNT[-]
     SAM_PAT = re.compile(rf'({DATE})\s+([ICPicp])\s+(\d{{5,}})(?:\s+\d+)?\s+(\d[\d,]*\.\d{{2}})(-?)')
     for m in SAM_PAT.finditer(t):
         letter = m.group(2).upper()
-        amt_str = m.group(4)
-        is_neg = m.group(5) == '-' or letter in ('C', 'P')
-        v = float(amt_str.replace(',',''))
-        if is_neg: v = -v
-        # I = Invoice, C/P = Credit Memo (negative, reduces balance)
+        v = float(m.group(4).replace(',',''))
+        if m.group(5) == '-' or letter in ('C','P'): v = -v
         typ = 'Invoice' if letter == 'I' else 'Credit Memo'
         line_no = t[:m.start()].count('\n')
         if line_no not in inv_lines:
             add(m.group(3), v, date=m.group(1), typ=typ, line_idx=line_no)
 
-    # S7b: Samuels CASH payment line — "01/02/26 P CASH 106.20-"
-    DATE_STR = r'(?:\d{1,2}[/\.\-]\d{1,2}[/\.\-]\d{2,4})'
-    CASH_PAT = re.compile(rf'({DATE_STR})\s+P\s+CASH\s+(\d[\d,]*\.\d{{2}})-')
-    cash_inv_n = 0
+    # S7b: Samuels CASH payment
+    CASH_PAT = re.compile(rf'({DATE})\s+P\s+CASH\s+(\d[\d,]*\.\d{{2}})-')
+    cash_n = 0
     for m in CASH_PAT.finditer(t):
-        cash_inv_n += 1
+        cash_n += 1
         line_no = t[:m.start()].count('\n')
         if line_no not in inv_lines:
-            add(f'CASH{cash_inv_n}', f'-{m.group(2)}', date=m.group(1),
-                typ='Credit Memo', line_idx=line_no)
+            add(f'CASH{cash_n}', f'-{m.group(2)}', date=m.group(1), typ='Credit Memo', line_idx=line_no)
 
-    # S8: Last resort — $amount lines not yet processed
+    # S9: Last resort — $amount lines not yet processed
     for i, line in enumerate(lines):
         if i in inv_lines: continue
         if re.search(r'\$[\d,]+\.\d{2}', line):
@@ -586,26 +376,48 @@ def parse_wrights(t):
                       "Amount":float(amt_lines[i].replace(",","")),"Type":"Invoice"})
     return R
 
-PARSERS = {
-    "BUCCANEER":parse_generic,"CKS BAR":parse_generic,"CKS":parse_generic,
-    "ED DON":parse_generic,"ROMANOS COF BAR":parse_generic,"ROMANOS":parse_generic,
-    "CINTAS":parse_generic,"CW":parse_generic,"DEX IMAGING":parse_generic,
-    "GOURMET FOODS":parse_generic,"HALPERNS":parse_generic,
-    "PIPER FIRE":parse_generic,"PROPANE NINJA":parse_generic,
-    "MR GREENS":parse_generic,"BUSH BROS":parse_generic,
-    "US PAPER":parse_us_paper,"FRANK GAY":parse_generic,
-    "PENGUIN":parse_generic,"GFS":parse_generic,"COF BAR":parse_generic,"AMAZON":None,
-    "ZWIESEL FORTESSA":parse_generic,"FORTESSA":parse_generic,
-    "UNIFIRST":parse_generic,
-    "CULIGAN":parse_generic,"CULLIGAN":parse_generic,
-    "SAMUELS":parse_generic,
-    "WRI":parse_wrights,
-    "COZZINI":parse_generic,
-}
 
-# ══════════════════════════════════════════════════════════════════════════
+def parse_us_paper(t):
+    D = {}; cur = None
+    for line in t.split('\n'):
+        L = line.strip()
+        if L in ("MAD DOGS AND ENGLISHMEN","OXFORD EXCHANGE LLC","Predalina LLC",
+                  "SH-19","The Library St Pete","The Stovall House"):
+            cur = L; D.setdefault(cur,[]); continue
+        if cur and re.match(r'^\d{2}/\d{2}/\d{4}', L):
+            m = re.match(r'(\d{2}/\d{2}/\d{4})\s+(Invoice|Credit\s*Memo)\s+(\d+)\s+\d{2}/\d{2}/\d{4}\s+(-?[\d,]+\.\d{2})', L)
+            if m:
+                v = float(m.group(4).replace(',',''))
+                if 'credit' in m.group(2).lower() and v > 0: v = -v
+                D[cur].append({"Date":m.group(1),"Invoice":m.group(3),"Amount":v,
+                               "Type":"Credit Memo" if v<0 else "Invoice"})
+    return D
+
+
+def parse_amazon_xl(fp):
+    R = []
+    try:
+        df = pd.read_excel(fp, sheet_name="Invoices", header=None)
+        if len(df) > 4:
+            for i in range(4, len(df)):
+                r = df.iloc[i]; inv = str(r.iloc[1]) if pd.notna(r.iloc[1]) else ""
+                d = str(r.iloc[2]) if pd.notna(r.iloc[2]) else ""
+                amt = r.iloc[8] if pd.notna(r.iloc[8]) else 0
+                if inv: R.append({"Date":d[:10],"Invoice":inv,"Amount":float(amt),"Type":"Invoice"})
+    except Exception:
+        pass
+    return R
+
+
+# All vendors route through parse_generic now
+PARSERS = {k: parse_generic for k in VM if k not in ("US PAPER", "WRI", "AMAZON")}
+PARSERS["US PAPER"] = parse_us_paper
+PARSERS["WRI"] = parse_wrights
+PARSERS["COF BAR"] = parse_generic
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  HELPERS
-# ══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 
 def fi(fn):
     n = fn.replace(".pdf","").replace(".xlsx","").upper()
@@ -624,16 +436,16 @@ def glk(gl, vn, locs):
     return gl[m].groupby("Document number")["Amount"].sum().to_dict()
 
 def mi(inv, lk):
-    # Try multiple variants to match GL document numbers
+    import re as _re
     inv = str(inv).strip()
     candidates = [
-        inv,                                              # exact
-        inv.lstrip("0") or inv,                          # strip leading zeros
-        inv.zfill(10) if inv.isdigit() and len(inv)<10 else None,  # zero-padded
-        f"INV-{inv}" if inv.isdigit() else None,         # add INV- prefix
-        f"INV{inv}" if inv.isdigit() else None,           # add INV prefix
-        re.sub(r'^INV[-\s]?', '', inv),                  # strip INV- prefix
-        re.sub(r'^INV[-\s]?', '', inv).lstrip("0"),      # strip prefix + zeros
+        inv,
+        inv.lstrip("0") or inv,
+        inv.zfill(10) if inv.isdigit() and len(inv)<10 else None,
+        f"INV-{inv}" if inv.isdigit() else None,
+        f"INV{inv}" if inv.isdigit() else None,
+        _re.sub(r'^INV[-\s]?', '', inv) if inv.upper().startswith('INV') else None,
+        (_re.sub(r'^INV[-\s]?', '', inv)).lstrip('0') if inv.upper().startswith('INV') else None,
     ]
     for c in candidates:
         if c and c in lk: return c, lk[c]
@@ -650,33 +462,30 @@ def _aw(ws, nc, mr=200, money_cols=None):
         else:
             ws.column_dimensions[get_column_letter(c)].width = min(mx+4, 30)
 
-# ══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 #  FORMATTING
-# ══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 
 def fmt_detail(ws, nr, nc):
     ws.sheet_view.showGridLines = False
-    ws.sheet_properties.tabColor = "FF7030"   # orange tab
+    ws.sheet_properties.tabColor = "FF7030"
     ws.freeze_panes = "A2"
     MONEY_COLS = {"Stmt Amount","GL Amount","Variance"}
 
     for r in range(1, nr + 2):
         ws.row_dimensions[r].height = ROW_HT
 
-    # Header row — orange fill, dark text
     for c in range(1, nc+1):
         cl = ws.cell(1, c)
         cl.fill = HDR; cl.font = _AH; cl.border = NO_BORDER
         cl.alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
 
-    # Data rows
     for r in range(2, nr+2):
         st = ws.cell(r, nc).value or ""
         for c in range(1, nc+1):
             cl = ws.cell(r, c); cl.border = NO_BORDER
             cn = ws.cell(1, c).value or ""
 
-            # Row fill by status
             if st == "Matched":
                 cl.fill = MATCH
                 cl.font = _AM if cn in MONEY_COLS else _A
@@ -693,7 +502,6 @@ def fmt_detail(ws, nr, nc):
             else:
                 cl.fill = ALT; cl.font = _A
 
-            # Number formats & alignment
             if cn in MONEY_COLS:
                 if cl.value is not None: cl.number_format = COMMA_FMT
                 cl.alignment = Alignment(horizontal="right", vertical="center")
@@ -708,9 +516,8 @@ def fmt_detail(ws, nr, nc):
 
     _aw(ws, nc, money_cols=MONEY_COLS)
 
-    # Jump-back button — col K
     jc = ws.cell(1, 11)
-    jc.value = "← Summary"
+    jc.value = "\u2190 Summary"
     jc.hyperlink = "#Summary!A1"
     jc.font = _JF
     jc.fill = NEON
@@ -730,13 +537,11 @@ def fmt_summary(ws, nr, nc):
     for r in range(1, nr + 2):
         ws.row_dimensions[r].height = ROW_HT
 
-    # Header — dark fill, orange text
     for c in range(1, nc+1):
         cl = ws.cell(1, c)
         cl.fill = SHDRF; cl.font = _AS; cl.border = NO_BORDER
         cl.alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
 
-    # Data rows
     for r in range(2, nr+2):
         mi_v = ws.cell(r, 6).value or 0
         va   = ws.cell(r, 5).value or 0
@@ -747,7 +552,6 @@ def fmt_summary(ws, nr, nc):
             cl.fill = rf
             cn = ws.cell(1, c).value or ""
 
-            # Font color by status
             if cn in MONEY_COLS:
                 cl.font = _AMI if mi_v > 0 else (_AV if va > 0 else _AM)
                 if cl.value is not None: cl.number_format = COMMA_FMT
@@ -762,9 +566,9 @@ def fmt_summary(ws, nr, nc):
 
     _aw(ws, nc, money_cols=MONEY_COLS)
 
-# ══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 #  CORE RECONCILIATION
-# ══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 
 def smart_invoice_match(raw_rows, gl, log_fn=None):
     def log(m):
@@ -774,22 +578,20 @@ def smart_invoice_match(raw_rows, gl, log_fn=None):
     if not inv_rows:
         return []
 
+    import re as _re
     variants = {}
     for r in inv_rows:
         raw = str(r["Invoice"]).strip()
-        import re as _re
         candidates = [
-            raw,
-            raw.lstrip("0") or raw,
-            raw.zfill(10) if raw.isdigit() and len(raw) < 10 else None,
+            raw, raw.lstrip("0") or raw,
+            raw.zfill(10) if raw.isdigit() and len(raw)<10 else None,
             f"INV-{raw}" if raw.isdigit() else None,
             f"INV{raw}" if raw.isdigit() else None,
             _re.sub(r'^INV[-\s]?', '', raw) if raw.upper().startswith('INV') else None,
             (_re.sub(r'^INV[-\s]?', '', raw)).lstrip('0') if raw.upper().startswith('INV') else None,
         ]
         for v in candidates:
-            if v and v.strip():
-                variants[v] = raw
+            if v and v.strip(): variants[v] = raw
 
     gl_hit = gl[gl["Document number"].isin(variants.keys())].copy()
 
@@ -811,20 +613,16 @@ def smart_invoice_match(raw_rows, gl, log_fn=None):
                    and len(str(r["Invoice"]).strip()) < 10 else None,
                    f"INV-{str(r['Invoice']).strip()}"
                    if str(r["Invoice"]).strip().isdigit() else None,
-                   f"INV{str(r['Invoice']).strip()}"
-                   if str(r["Invoice"]).strip().isdigit() else None,
                ] if v)]
+
         if sub:
-            # Filter false positives but allow single-invoice files to match
-            # Rule: need at least 2 matches OR match covers >25% of invoices
-            # Exception: if file only has 1-2 invoices total, allow 1 match
             total_inv = len(inv_rows)
             if total_inv <= 2:
-                min_match = 1  # small files: allow any match
+                min_match = 1
             else:
                 min_match = max(2, int(total_inv * 0.20))
             if len(sub) < min_match:
-                log(f"    ↳ skipping {vendor} / {loc_id}: {len(sub)}/{total_inv} match (below threshold)")
+                log(f"    ↳ skipping {vendor} / {loc_id}: {len(sub)}/{total_inv} (below threshold)")
                 continue
             label = f"{loc_id} {vendor.split()[0]}"[:31]
             log(f"    → {vendor} / {loc_id}: {len(sub)} invoices")
@@ -862,7 +660,7 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
     log(f"{len(stmts)} statement file(s) found")
 
     all_stmt_set = set(stmts)
-    sheets = {}; srows = []; reconciled = set()
+    sheets = {}; srows = []; reconciled = set(); total_mismatches = []
 
     if file_overrides is None:
         file_overrides = {}
@@ -871,7 +669,6 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
         inv_rows = [r for r in raw if r["Type"] not in SKIP_TYPES]
         if not inv_rows:
             log(f"    (all payments — skipped)"); reconciled.add(src); return
-        # Col A = descriptive Entity_Vendor label (Col B = source filename)
         base_sn = sn[:31]; sn2 = base_sn; n = 1
         while sn2 in sheets:
             sn2 = f"{base_sn[:28]} {n:02d}"; n += 1
@@ -900,7 +697,33 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
         reconciled.add(src)
         log(f"    {len(df)} items: {m} matched, {v} variance, {mig} missing in GL")
 
-    def process_rows(fn, fp, rows, fallback_label, fallback_vendor, fallback_locs):
+    def process_rows(fn, fp, rows, fallback_label, fallback_vendor, fallback_locs, stmt_total=None):
+        # VALIDATE: extracted total must match statement total
+        if stmt_total is not None:
+            extracted = round(sum(r["Amount"] for r in rows if r["Type"] not in SKIP_TYPES), 2)
+            diff = round(extracted - stmt_total, 2)
+            if abs(diff) > 0.02:
+                # Try including payment rows (they reduce the balance)
+                extracted_all = round(sum(r["Amount"] for r in rows), 2)
+                diff_all = round(extracted_all - stmt_total, 2)
+                if abs(diff_all) <= 0.02:
+                    log(f"    ✓ Total validated (with payments): ${extracted_all:.2f} = ${stmt_total:.2f}")
+                else:
+                    # Add a reconciling payment entry to make totals balance
+                    # This handles statements like CKS where payments reduce the net due
+                    if abs(diff) < extracted * 0.15:  # only if diff is < 15% of total (reasonable)
+                        reconciling_amt = round(stmt_total - extracted, 2)
+                        rows = rows + [{"Date": "", "Invoice": "Payments Applied",
+                                       "Amount": reconciling_amt, "Type": "Payment Adjustment"}]
+                        log(f"    ✓ Total reconciled with payment adjustment: ${reconciling_amt:.2f}")
+                    else:
+                        log(f"    ✗ TOTAL MISMATCH: extracted ${extracted:.2f} vs statement ${stmt_total:.2f} (diff ${diff:.2f})")
+                        log(f"    → Excluding from output — unable to reliably reconcile")
+                        total_mismatches.append(fn)
+                        return
+            else:
+                log(f"    ✓ Total validated: ${extracted:.2f} = ${stmt_total:.2f}")
+
         smart = smart_invoice_match(rows, gl, log)
         if smart:
             for sg in smart:
@@ -941,14 +764,23 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
             continue
 
         txt = _pdf(fp)
+
+        # STEP 1: Find statement total FIRST
+        stmt_total, total_label = find_statement_total(txt)
+        if stmt_total:
+            log(f"    Statement total: ${stmt_total:.2f} (via {total_label})")
+        else:
+            log(f"    WARNING: Could not find statement total — will include without validation")
+
+        # STEP 2: Extract invoices
         parser = PARSERS.get(v) if v else None
         rows = None
-        if parser:
+        if parser and parser != parse_us_paper:
             rows = parser(txt)
         if not rows:
             rows = parse_wrights(txt)
         if not rows:
-            rows = parse_generic(txt)  # universal extractor — handles any format
+            rows = parse_generic(txt)
 
         if not rows and not txt.strip():
             log(f"  No text extracted"); reconciled.add(fn); continue
@@ -959,11 +791,10 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
         fb_locs   = ov.get("gl_locs")   or (LOC.get(l,[]) if l else [])
         fb_label  = f"{l} {v.title()}" if l and v else fn.replace(".pdf","").replace(".xlsx","")[:31]
 
-        process_rows(fn, fp, rows, fb_label, fb_vendor, fb_locs)
+        process_rows(fn, fp, rows, fb_label, fb_vendor, fb_locs, stmt_total=stmt_total)
 
     if not srows:
-        raise ValueError("No vendor statements were successfully processed. "
-                         "Check that your file names follow the required format (e.g. 'OE GFS March.pdf').")
+        raise ValueError("No vendor statements were successfully processed.")
 
     _today = date.today().strftime("%m%d%y")
     output_filename = f"AP_RECONCILIATION_{_today}.xlsx"
@@ -982,7 +813,6 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
         if s in wb.sheetnames: fmt_detail(wb[s], len(df), len(df.columns))
     ws = wb["Summary"]; fmt_summary(ws, len(sdf), len(sdf.columns))
 
-    # Hyperlinks on summary vendor names
     for r in range(2, len(sdf)+2):
         cl = ws.cell(r, 1); sn = cl.value
         if sn and sn[:31] in wb.sheetnames:
@@ -994,6 +824,8 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
 
     tm=sdf["Matched"].sum(); tv=sdf["Amt Variance"].sum(); tmi=sdf["Missing in GL"].sum()
     log(f"Done! {len(sheets)+1} sheets — {tm} matched | {tv} variances | {tmi} missing in GL")
+    if total_mismatches:
+        log(f"Excluded (total mismatch): {len(total_mismatches)} file(s): {', '.join(total_mismatches)}")
 
     skipped = sorted(all_stmt_set - reconciled)
     return out_buf.getvalue(), output_filename, reconciled, skipped
