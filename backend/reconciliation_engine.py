@@ -1,7 +1,10 @@
 """
-Vendor Statement Reconciliation Engine v5
-- Statement total is the bible: find it first, validate against extracted transactions
-- If totals don't match after all strategies, exclude from output
+Vendor Statement Reconciliation Engine v6
+- Layer 1: Vendor-stated total is authoritative. Always carried through to output.
+- Layer 2: GL comparison by invoice number + vendor name.
+- Multi-entity statements split into per-entity sheets, each with its own sub-total.
+- Layer 1 failures STAY in output, flagged "Manual Review Required" — never excluded.
+- Banner at top of each detail sheet shows vendor totals + Layer 1/2 status.
 """
 import os, re, io, shutil, tempfile
 from datetime import date, datetime
@@ -11,7 +14,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-ENGINE_VERSION = "v5.0-total-first"
+ENGINE_VERSION = "v6.0-layer1-banner"
 print(f"[reconciliation_engine] loaded {ENGINE_VERSION}")
 
 # ── Mappings ─────────────────────────────────────────────────────────────────
@@ -127,6 +130,13 @@ def find_statement_total(text):
         (r"^TOTAL\s+\$?([\d,]+\.\d{2})",                                                   "TOTAL"),
         (r"Total:\s+([\d,]+\.\d{2})\s*$",                                                  "Total: EOL"),
         (r"Amount\s+Due\s*\n\s*\$?([\d,]+\.\d{2})",                                     "Amount Due newline"),
+        # NEW: end-of-document grand totals (US Paper "TOTAL $X $X", CW "BALANCE DUE 13,450.33")
+        (r"^\s*TOTAL\s+\$?([\d,]+\.\d{2})\s+\$?[\d,]+\.\d{2}\s*$",                         "Grand TOTAL line"),
+        (r"BALANCE\s+DUE\s+\$?([\d,]+\.\d{2})",                                           "BALANCE DUE"),
+        (r"New\s+Balance:?\s*\$?([\d,]+\.\d{2})",                                         "New Balance"),
+        (r"Statement\s+Total:?\s*\$?([\d,]+\.\d{2})",                                     "Statement Total"),
+        (r"Current\s+Balance:?\s*\$?([\d,]+\.\d{2})",                                     "Current Balance"),
+        (r"Outstanding\s+Balance:?\s*\$?([\d,]+\.\d{2})",                                 "Outstanding Balance"),
     ]
     for pat, label in labelled:
         m = re.search(pat, text, re.I | re.M)
@@ -134,9 +144,12 @@ def find_statement_total(text):
             v = try_float(m.group(1))
             if v: return v, label
 
-    # P2: CW — "BALANCE 13,450.33" (number AFTER BALANCE keyword)
-    m = re.search(r"BALANCE\s+([\d,]+\.\d{2})", text, re.I)
-    if m:
+    # P2: CW — "BALANCE 13,450.33" (number AFTER BALANCE keyword, but skip "Starting Balance")
+    for m in re.finditer(r"(?<!Starting\s)BALANCE\s+([\d,]+\.\d{2})", text, re.I):
+        # Skip if preceded by "Starting" within reasonable distance
+        start = max(0, m.start() - 15)
+        if "starting" in text[start:m.start()].lower():
+            continue
         v = try_float(m.group(1))
         if v: return v, "BALANCE amount"
 
@@ -164,6 +177,47 @@ def find_statement_total(text):
         if v: return v, "aging last value"
 
     return None, None
+
+
+def find_section_totals(text):
+    """
+    For multi-entity statements (e.g. US Paper), find each section header
+    and its sub-total. Returns list of dicts:
+      [{"section": "MAD DOGS AND ENGLISHMEN", "total": 2748.37, "start": 234, "end": 567}, ...]
+    Sections defined by "Total for <NAME> $X.XX" pattern.
+    Returns [] if no sections found.
+    """
+    results = []
+    # Pattern: "Total for <NAME> $X.XX" — name may span multiple lines, total is at the end
+    # Strategy: find all "Total for ... $X.XX" markers, then walk backwards to find section start
+    pattern = re.compile(
+        r"Total\s+for\s+(.+?)\s*\$?([\d,]+\.\d{2})\s*\$?[\d,]*\.?\d*",
+        re.I | re.DOTALL
+    )
+
+    matches = list(pattern.finditer(text))
+    if not matches:
+        return []
+
+    # For each match, determine the section name (cleaned) and total
+    last_end = 0
+    for m in matches:
+        raw_name = re.sub(r'\s+', ' ', m.group(1)).strip()
+        try:
+            total = float(m.group(2).replace(",", ""))
+        except:
+            continue
+        if total <= 0:
+            continue
+        results.append({
+            "section": raw_name,
+            "total": total,
+            "start": last_end,
+            "end": m.end(),
+        })
+        last_end = m.end()
+
+    return results
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  PDF TEXT EXTRACTION
@@ -420,9 +474,12 @@ PARSERS["COF BAR"] = parse_generic
 # ══════════════════════════════════════════════════════════════════════════════
 
 def fi(fn):
+    # Normalize: replace underscores with spaces (some uploads convert spaces → underscores)
     n = fn.replace(".pdf","").replace(".xlsx","").upper()
+    n = n.replace("_", " ")
+    n = re.sub(r'\s+', ' ', n).strip()
     loc = None
-    for p in ["SH19","SH","LIB","MD","OE","PRED","OCMGT"]:
+    for p in ["SH19","SH","LIB","MD","OE","PRED","OCMGT","JTS"]:
         if n.startswith(p+" "): loc = p; break
     vk = None; rem = n[len(loc):].strip() if loc else n
     for k in sorted(VM, key=len, reverse=True):
@@ -466,25 +523,106 @@ def _aw(ws, nc, mr=200, money_cols=None):
 #  FORMATTING
 # ══════════════════════════════════════════════════════════════════════════════
 
-def fmt_detail(ws, nr, nc):
+def _write_banner(ws, meta, banner_rows):
+    """Write the metadata banner at the top of a detail sheet (rows 1..banner_rows)."""
+    LBL = Font(name="Aptos", size=11, bold=True, color="FF7030")
+    VAL = Font(name="Aptos", size=11, color="E8DDD0")
+    OK  = Font(name="Aptos", size=11, bold=True, color="86EFAC")
+    WRN = Font(name="Aptos", size=11, bold=True, color="FCD34D")
+    ERR = Font(name="Aptos", size=11, bold=True, color="F87171")
+
+    BG = PatternFill("solid", fgColor="1E1B17")
+
+    def status_font(status):
+        if not status: return VAL
+        s = str(status)
+        if s.startswith("✓"): return OK
+        if s.startswith("⚠"): return WRN
+        if s.startswith("❓"): return ERR
+        return VAL
+
+    def fmt_money(v):
+        if v is None: return "—"
+        return f"${v:,.2f}"
+
+    def fmt_var(v):
+        if v is None: return "—"
+        return f"${v:+,.2f}"
+
+    rows = [
+        ("Vendor:",              meta.get("vendor_display", "")),
+        ("Entity:",              meta.get("entity_display", "")),
+        ("Statement Date:",      meta.get("stmt_date", "") or "—"),
+        ("Source File:",         meta.get("source_file", "")),
+        ("",                     ""),
+        ("Vendor Stated Total:", fmt_money(meta.get("vendor_stated_total"))),
+        ("Extracted Total:",     fmt_money(meta.get("extracted_total"))),
+        ("Layer 1 Variance:",    fmt_var(meta.get("l1_variance"))),
+        ("Layer 1 Status:",      meta.get("l1_status", "")),
+        ("",                     ""),
+        ("GL Total (Matched):",  fmt_money(meta.get("gl_total"))),
+        ("Net Variance:",        fmt_var(meta.get("net_variance"))),
+        ("Layer 2 Status:",      meta.get("l2_status", "")),
+    ]
+
+    for i, (label, value) in enumerate(rows, start=1):
+        lc = ws.cell(row=i, column=1, value=label)
+        vc = ws.cell(row=i, column=2, value=value)
+        lc.fill = BG; vc.fill = BG
+        lc.font = LBL
+        if label.startswith("Layer 1 Status") or label.startswith("Layer 2 Status"):
+            vc.font = status_font(value)
+        elif label.startswith("Layer 1 Variance") or label.startswith("Net Variance"):
+            # Color variance amounts: green if 0, yellow if non-zero
+            try:
+                v = meta.get("l1_variance" if "Layer 1" in label else "net_variance")
+                if v is None or abs(float(v)) <= 0.02:
+                    vc.font = OK
+                else:
+                    vc.font = WRN
+            except:
+                vc.font = VAL
+        else:
+            vc.font = VAL
+        lc.alignment = Alignment(horizontal="right", vertical="center")
+        vc.alignment = Alignment(horizontal="left", vertical="center")
+        ws.row_dimensions[i].height = ROW_HT
+
+    # Fill remaining cells in banner area with BG so it looks intentional
+    for i in range(1, banner_rows + 1):
+        for c in range(3, 12):
+            cell = ws.cell(row=i, column=c)
+            cell.fill = BG
+            cell.border = NO_BORDER
+
+    # Set widths so banner labels and values are readable
+    ws.column_dimensions['A'].width = max(ws.column_dimensions['A'].width or 0, 24)
+    ws.column_dimensions['B'].width = max(ws.column_dimensions['B'].width or 0, 40)
+
+
+def fmt_detail(ws, nr, nc, banner_rows=0):
+    """Format the detail data table. Table header is at row banner_rows+1, data follows."""
     ws.sheet_view.showGridLines = False
     ws.sheet_properties.tabColor = "FF7030"
-    ws.freeze_panes = "A2"
+    header_row = banner_rows + 1
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=1).coordinate
     MONEY_COLS = {"Stmt Amount","GL Amount","Variance"}
 
-    for r in range(1, nr + 2):
+    for r in range(header_row, header_row + nr + 1):
         ws.row_dimensions[r].height = ROW_HT
 
+    # Header row
     for c in range(1, nc+1):
-        cl = ws.cell(1, c)
+        cl = ws.cell(header_row, c)
         cl.fill = HDR; cl.font = _AH; cl.border = NO_BORDER
         cl.alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
 
-    for r in range(2, nr+2):
+    # Data rows
+    for r in range(header_row + 1, header_row + nr + 1):
         st = ws.cell(r, nc).value or ""
         for c in range(1, nc+1):
             cl = ws.cell(r, c); cl.border = NO_BORDER
-            cn = ws.cell(1, c).value or ""
+            cn = ws.cell(header_row, c).value or ""
 
             if st == "Matched":
                 cl.fill = MATCH
@@ -514,38 +652,82 @@ def fmt_detail(ws, nr, nc):
                     cl.value = nd; cl.number_format = DATE_FMT
                 cl.alignment = Alignment(horizontal="center", vertical="center")
 
-    _aw(ws, nc, money_cols=MONEY_COLS)
+    _aw_offset(ws, nc, header_row=header_row, mr=banner_rows + nr + 200, money_cols=MONEY_COLS)
 
-    jc = ws.cell(1, 11)
+    # Back-link button next to the table header
+    jc = ws.cell(header_row, 11)
     jc.value = "\u2190 Summary"
     jc.hyperlink = "#Summary!A1"
     jc.font = _JF
     jc.fill = NEON
     jc.border = NO_BORDER
     jc.alignment = Alignment(horizontal="center", vertical="center")
-    if ws.column_dimensions['K'].width < 20:
+    if (ws.column_dimensions['K'].width or 0) < 20:
         ws.column_dimensions['K'].width = 20
+
+
+def _aw_offset(ws, nc, header_row=1, mr=200, money_cols=None):
+    """Auto-width that uses header row at given offset (for banner-aware layout)."""
+    if money_cols is None:
+        money_cols = set()
+    for c in range(1, nc+1):
+        # Check both banner and table content for max width
+        mx = max((len(str(ws.cell(r, c).value or ""))
+                  for r in range(1, min(ws.max_row + 1, mr))), default=0)
+        cn = ws.cell(header_row, c).value or ""
+        existing = ws.column_dimensions[get_column_letter(c)].width or 0
+        if cn in money_cols:
+            new_w = max(mx + 4, MONEY_MIN_W)
+        else:
+            new_w = min(mx + 4, 40)
+        ws.column_dimensions[get_column_letter(c)].width = max(existing, new_w)
 
 
 def fmt_summary(ws, nr, nc):
     ws.sheet_view.showGridLines = False
     ws.sheet_properties.tabColor = "FF7030"
     ws.freeze_panes = "A2"
-    MONEY_COLS = {"Stmt Total","GL Total","Net Variance"}
+    MONEY_COLS = {"Vendor Stmt Total","Extracted Total","Layer 1 Variance",
+                  "GL Total","Net Variance"}
     QTY_COLS   = {"Items","Matched","Amt Variance","Missing in GL"}
+    STATUS_COLS = {"Layer 1 Status","Layer 2 Status"}
 
     for r in range(1, nr + 2):
         ws.row_dimensions[r].height = ROW_HT
 
+    # Header row
     for c in range(1, nc+1):
         cl = ws.cell(1, c)
         cl.fill = SHDRF; cl.font = _AS; cl.border = NO_BORDER
         cl.alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
 
+    OK  = Font(name="Aptos", size=11, bold=True, color="86EFAC")
+    WRN = Font(name="Aptos", size=11, bold=True, color="FCD34D")
+    ERR = Font(name="Aptos", size=11, bold=True, color="F87171")
+
+    # Locate column indexes by header name
+    headers = {ws.cell(1, c).value: c for c in range(1, nc+1)}
+    l1_status_col = headers.get("Layer 1 Status")
+    l2_status_col = headers.get("Layer 2 Status")
+    mig_col       = headers.get("Missing in GL")
+    var_col       = headers.get("Amt Variance")
+
     for r in range(2, nr+2):
-        mi_v = ws.cell(r, 6).value or 0
-        va   = ws.cell(r, 5).value or 0
-        rf = MISS if mi_v > 0 else (VAR if va > 0 else MATCH)
+        l1_status = ws.cell(r, l1_status_col).value if l1_status_col else ""
+        l2_status = ws.cell(r, l2_status_col).value if l2_status_col else ""
+        mi_v      = ws.cell(r, mig_col).value or 0 if mig_col else 0
+        va        = ws.cell(r, var_col).value or 0 if var_col else 0
+
+        # Row fill = worst status across both layers
+        l1_bad = isinstance(l1_status, str) and l1_status.startswith("⚠")
+        l1_unk = isinstance(l1_status, str) and l1_status.startswith("❓")
+        l2_bad = mi_v > 0 or va > 0
+        if l1_bad or l1_unk or mi_v > 0:
+            rf = MISS
+        elif l2_bad:
+            rf = VAR
+        else:
+            rf = MATCH
 
         for c in range(1, nc+1):
             cl = ws.cell(r, c); cl.border = NO_BORDER
@@ -553,12 +735,28 @@ def fmt_summary(ws, nr, nc):
             cn = ws.cell(1, c).value or ""
 
             if cn in MONEY_COLS:
-                cl.font = _AMI if mi_v > 0 else (_AV if va > 0 else _AM)
+                if mi_v > 0 or l1_bad:
+                    cl.font = _AMI
+                elif l2_bad or l1_unk:
+                    cl.font = _AV
+                else:
+                    cl.font = _AM
                 if cl.value is not None: cl.number_format = COMMA_FMT
                 cl.alignment = Alignment(horizontal="right", vertical="center")
             elif cn in QTY_COLS:
                 cl.font = _A
                 if cl.value is not None: cl.number_format = COMMA_INT
+                cl.alignment = Alignment(horizontal="center", vertical="center")
+            elif cn in STATUS_COLS:
+                v = cl.value or ""
+                if isinstance(v, str) and v.startswith("✓"):
+                    cl.font = OK
+                elif isinstance(v, str) and v.startswith("⚠"):
+                    cl.font = WRN
+                elif isinstance(v, str) and v.startswith("❓"):
+                    cl.font = ERR
+                else:
+                    cl.font = _A
                 cl.alignment = Alignment(horizontal="center", vertical="center")
             else:
                 cl.font = _A
@@ -624,7 +822,11 @@ def smart_invoice_match(raw_rows, gl, log_fn=None):
             if len(sub) < min_match:
                 log(f"    ↳ skipping {vendor} / {loc_id}: {len(sub)}/{total_inv} (below threshold)")
                 continue
-            label = f"{loc_id} {vendor.split()[0]}"[:31]
+            # Build a readable label — skip stop words like "The", "A", "An", "Of"
+            STOPS = {"THE", "A", "AN", "OF", "&"}
+            words = [w for w in vendor.split() if w.upper() not in STOPS]
+            short_name = (words[0] if words else vendor.split()[0]).rstrip(',.')
+            label = f"{loc_id} {short_name}"[:31]
             log(f"    → {vendor} / {loc_id}: {len(sub)} invoices")
             results.append({"label": label, "rows": sub,
                              "vendor": vendor, "loc_id": loc_id})
@@ -660,117 +862,216 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
     log(f"{len(stmts)} statement file(s) found")
 
     all_stmt_set = set(stmts)
-    sheets = {}; srows = []; reconciled = set(); total_mismatches = []
+    sheets = {}; sheet_meta = {}; srows = []; reconciled = set()
 
     if file_overrides is None:
         file_overrides = {}
 
-    def do(sn, raw, gv, gl_l, src):
+    def do(sn, raw, gv, gl_l, src,
+           vendor_stated_total=None, vendor_display=None,
+           entity_display=None, stmt_date=None):
+        """
+        Build one sheet with reconciliation results + Layer 1/2 metadata.
+        - vendor_stated_total: authoritative total from the vendor's PDF (or None if not found)
+        - All rows get written; Layer 1 failures are FLAGGED, never excluded.
+        """
         inv_rows = [r for r in raw if r["Type"] not in SKIP_TYPES]
         if not inv_rows:
             log(f"    (all payments — skipped)"); reconciled.add(src); return
+
         base_sn = sn[:31]; sn2 = base_sn; n = 1
         while sn2 in sheets:
             sn2 = f"{base_sn[:28]} {n:02d}"; n += 1
         sn = sn2
+
         lk = glk(gl, gv, gl_l); recon = []
         for it in inv_rows:
-            inv = str(it["Invoice"]).strip(); sa = round(it["Amount"],2)
+            inv = str(it["Invoice"]).strip(); sa = round(it["Amount"], 2)
             mk, ga = mi(inv, lk)
             if mk is not None:
-                ga = round(ga,2); v = round(sa-ga,2)
-                st = "Matched" if abs(v)<0.015 else "Amount Variance"
-                recon.append({"Date":it["Date"],"Invoice #":inv,"Type":it["Type"],
-                              "Stmt Amount":sa,"GL Amount":ga,"Variance":v,"Status":st})
+                ga = round(ga, 2); v = round(sa - ga, 2)
+                st = "Matched" if abs(v) < 0.015 else "Amount Variance"
+                recon.append({"Date": it["Date"], "Invoice #": inv, "Type": it["Type"],
+                              "Stmt Amount": sa, "GL Amount": ga, "Variance": v, "Status": st})
             else:
-                recon.append({"Date":it["Date"],"Invoice #":inv,"Type":it["Type"],
-                              "Stmt Amount":sa,"GL Amount":None,"Variance":None,"Status":"Missing in GL"})
+                recon.append({"Date": it["Date"], "Invoice #": inv, "Type": it["Type"],
+                              "Stmt Amount": sa, "GL Amount": None, "Variance": None,
+                              "Status": "Missing in GL"})
+
         df = pd.DataFrame(recon); sheets[sn] = df
-        m = len(df[df.Status=="Matched"]); v = len(df[df.Status=="Amount Variance"])
-        mig = len(df[df.Status=="Missing in GL"])
-        st = df["Stmt Amount"].sum()
-        gt = df["GL Amount"].sum() if df["GL Amount"].notna().any() else 0
-        srows.append({"Statement":sn,"Source File":src,"Items":len(df),
-                       "Matched":m,"Amt Variance":v,"Missing in GL":mig,
-                       "Stmt Total":round(st,2),"GL Total":round(gt,2),
-                       "Net Variance":round(st-gt,2)})
-        reconciled.add(src)
-        log(f"    {len(df)} items: {m} matched, {v} variance, {mig} missing in GL")
 
-    def process_rows(fn, fp, rows, fallback_label, fallback_vendor, fallback_locs, stmt_total=None):
-        # VALIDATE: extracted total must match statement total
-        if stmt_total is not None:
-            extracted = round(sum(r["Amount"] for r in rows if r["Type"] not in SKIP_TYPES), 2)
-            diff = round(extracted - stmt_total, 2)
-            if abs(diff) > 0.02:
-                # Try including payment rows (they reduce the balance)
-                extracted_all = round(sum(r["Amount"] for r in rows), 2)
-                diff_all = round(extracted_all - stmt_total, 2)
-                if abs(diff_all) <= 0.02:
-                    log(f"    ✓ Total validated (with payments): ${extracted_all:.2f} = ${stmt_total:.2f}")
-                else:
-                    # Add a reconciling payment entry to make totals balance
-                    # This handles statements like CKS where payments reduce the net due
-                    if abs(diff) < extracted * 0.15:  # only if diff is < 15% of total (reasonable)
-                        reconciling_amt = round(stmt_total - extracted, 2)
-                        rows = rows + [{"Date": "", "Invoice": "Payments Applied",
-                                       "Amount": reconciling_amt, "Type": "Payment Adjustment"}]
-                        log(f"    ✓ Total reconciled with payment adjustment: ${reconciling_amt:.2f}")
-                    else:
-                        log(f"    ✗ TOTAL MISMATCH: extracted ${extracted:.2f} vs statement ${stmt_total:.2f} (diff ${diff:.2f})")
-                        log(f"    → Excluding from output — unable to reliably reconcile")
-                        total_mismatches.append(fn)
-                        return
+        # ── Layer 1: vendor stated total vs extracted total ──
+        # Extracted total = sum of ALL rows including payments (those reduce balance on statement)
+        extracted_total = round(sum(r["Amount"] for r in raw), 2)
+        if vendor_stated_total is not None:
+            l1_var = round(extracted_total - vendor_stated_total, 2)
+            if abs(l1_var) <= 0.02:
+                l1_status = "✓ Reconciled"
             else:
-                log(f"    ✓ Total validated: ${extracted:.2f} = ${stmt_total:.2f}")
+                l1_status = "⚠ Manual Review Required"
+                log(f"    ⚠ Layer 1 variance: extracted ${extracted_total:.2f} vs vendor ${vendor_stated_total:.2f} (diff ${l1_var:+.2f})")
+        else:
+            l1_var = None
+            l1_status = "❓ Total Not Found"
 
+        # ── Layer 2: GL comparison ──
+        m_count = len(df[df.Status == "Matched"])
+        v_count = len(df[df.Status == "Amount Variance"])
+        mig_count = len(df[df.Status == "Missing in GL"])
+        gl_total = float(df["GL Amount"].sum()) if df["GL Amount"].notna().any() else 0.0
+        extracted_inv_total = float(df["Stmt Amount"].sum())
+        net_var = round(extracted_inv_total - gl_total, 2)
+
+        if v_count == 0 and mig_count == 0:
+            l2_status = "✓ All Matched"
+        else:
+            issues = []
+            if v_count > 0: issues.append(f"{v_count} variance{'s' if v_count > 1 else ''}")
+            if mig_count > 0: issues.append(f"{mig_count} missing")
+            l2_status = "⚠ " + ", ".join(issues)
+
+        sheet_meta[sn] = {
+            "vendor_display":       vendor_display or gv or "Unknown",
+            "entity_display":       entity_display or "Unknown",
+            "stmt_date":            stmt_date or "",
+            "source_file":          src,
+            "vendor_stated_total":  vendor_stated_total,
+            "extracted_total":      extracted_total,
+            "l1_variance":          l1_var,
+            "l1_status":            l1_status,
+            "gl_total":             round(gl_total, 2),
+            "net_variance":         net_var,
+            "l2_status":            l2_status,
+        }
+
+        srows.append({
+            "Statement":         sn,
+            "Source File":       src,
+            "Items":             len(df),
+            "Matched":           m_count,
+            "Amt Variance":      v_count,
+            "Missing in GL":     mig_count,
+            "Vendor Stmt Total": round(vendor_stated_total, 2) if vendor_stated_total is not None else None,
+            "Extracted Total":   round(extracted_total, 2),
+            "Layer 1 Variance":  l1_var,
+            "Layer 1 Status":    l1_status,
+            "GL Total":          round(gl_total, 2),
+            "Net Variance":      net_var,
+            "Layer 2 Status":    l2_status,
+        })
+        reconciled.add(src)
+        log(f"    {len(df)} items: {m_count} matched, {v_count} variance, {mig_count} missing | L1: {l1_status}")
+
+    def process_rows(fn, fp, rows, fallback_label, fallback_vendor, fallback_locs,
+                     stmt_total=None, stmt_date=None):
+        """
+        Route rows through smart-match → fallback. NEVER excludes a statement
+        for Layer 1 failures. NEVER fabricates 'Payment Adjustment' entries.
+        Layer 1 reconciliation happens inside do() and surfaces as a flag.
+        """
         smart = smart_invoice_match(rows, gl, log)
         if smart:
+            # Multi-group from smart match: vendor_stated_total is the GRAND total only.
+            # If there's just 1 group, the grand total IS that group's total. Otherwise
+            # we can't validate per-group sub-totals here, so mark as Total Not Found.
             for sg in smart:
-                do(sg["label"], sg["rows"], sg["vendor"], [sg["loc_id"]], fn)
+                per_sheet_total = stmt_total if len(smart) == 1 else None
+                do(sg["label"], sg["rows"], sg["vendor"], [sg["loc_id"]], fn,
+                   vendor_stated_total=per_sheet_total,
+                   vendor_display=sg["vendor"],
+                   entity_display=sg["loc_id"],
+                   stmt_date=stmt_date)
         else:
             log(f"    Smart match found nothing — using filename fallback")
-            do(fallback_label, rows, fallback_vendor, fallback_locs, fn)
+            do(fallback_label, rows, fallback_vendor, fallback_locs, fn,
+               vendor_stated_total=stmt_total,
+               vendor_display=fallback_vendor,
+               entity_display=fallback_label,
+               stmt_date=stmt_date)
 
+    # ──────────────────────────────────────────────────────────────────────
+    #  Per-statement loop
+    # ──────────────────────────────────────────────────────────────────────
     for fn in sorted(stmts):
         fp   = stmt_map[fn]
         ov   = file_overrides.get(fn, {})
         l, v = fi(fn)
         log(f"Processing: {fn}")
 
+        # ── US Paper: multi-entity statement with explicit per-entity sub-totals ──
         if v == "US PAPER":
-            txt = _pdf(fp); us = parse_us_paper(txt)
+            txt = _pdf(fp)
+            us = parse_us_paper(txt)
+            section_totals = find_section_totals(txt)
+            # Map raw section name → sub-total
+            sub_total_map = {}
+            for s in section_totals:
+                sn_raw = s["section"].strip()
+                sub_total_map[sn_raw.upper()] = s["total"]
+
+            def lookup_subtotal(canonical_name):
+                """
+                Match canonical entity name to extracted section total.
+                Handles line-break truncation (e.g. section 'MAD DOGS AND' → canonical 'MAD DOGS AND ENGLISHMEN').
+                Requires substantive overlap — never matches just on a generic word like 'THE'.
+                """
+                up = canonical_name.upper()
+                # Pass 1: exact match
+                if up in sub_total_map:
+                    return sub_total_map[up]
+                # Pass 2: canonical starts with section (handles truncation)
+                # Require section to be either ≥8 chars OR have ≥2 words to avoid generic prefixes like "THE"
+                for ku, t in sub_total_map.items():
+                    if up.startswith(ku) and (len(ku) >= 8 or len(ku.split()) >= 2):
+                        return t
+                # Pass 3: section starts with canonical (canonical is shorter)
+                for ku, t in sub_total_map.items():
+                    if ku.startswith(up) and (len(up) >= 5 or len(up.split()) >= 2):
+                        return t
+                return None
+
             usm = {
-                "MAD DOGS AND ENGLISHMEN":(["MAD-80041"],"MD Us Paper"),
-                "OXFORD EXCHANGE LLC":(["OE","OE-96001","OE-96003","OE-96004","OE-96005","OE-96008","OE-96011"],"OE Us Paper"),
-                "Predalina LLC":(["PRED","PRED-82000"],"PRED Us Paper"),
-                "SH-19":(["SH-93004"],"SH19 Us Paper"),
-                "The Library St Pete":(["LIB-96100"],"LIB Us Paper"),
-                "The Stovall House":(["SH-93001","SH-93002"],"SH Us Paper"),
+                "MAD DOGS AND ENGLISHMEN": (["MAD-80041"], "MD Us Paper", "MAD DOGS AND ENGLISHMEN"),
+                "OXFORD EXCHANGE LLC":     (["OE","OE-96001","OE-96003","OE-96004","OE-96005","OE-96008","OE-96011"], "OE Us Paper", "OXFORD EXCHANGE LLC"),
+                "Predalina LLC":           (["PRED","PRED-82000"], "PRED Us Paper", "Predalina LLC"),
+                "SH-19":                   (["SH-93004"], "SH19 Us Paper", "SH-19"),
+                "The Library St Pete":     (["LIB-96100"], "LIB Us Paper", "The Library St Pete"),
+                "The Stovall House":       (["SH-93001","SH-93002"], "SH Us Paper", "The Stovall House"),
             }
             found_sub = False
-            for c, ir in us.items():
-                if c in usm and ir:
-                    l2,sn2 = usm[c]; log(f"  Sub: {c}"); do(sn2,ir,"US PAPER CORP",l2,fn); found_sub=True
-            if not found_sub: reconciled.add(fn)
+            for canonical, ir in us.items():
+                if canonical in usm and ir:
+                    locs2, sn2, entity_disp = usm[canonical]
+                    sub_total = lookup_subtotal(canonical)
+                    log(f"  Sub: {canonical} (vendor sub-total: ${sub_total:.2f})" if sub_total else f"  Sub: {canonical}")
+                    do(sn2, ir, "US PAPER CORP", locs2, fn,
+                       vendor_stated_total=sub_total,
+                       vendor_display="US PAPER CORP",
+                       entity_display=entity_disp)
+                    found_sub = True
+            if not found_sub:
+                reconciled.add(fn)
             continue
 
         if fn.endswith(".xlsx") and "AMAZON" in fn.upper():
             r = parse_amazon_xl(fp)
-            gv   = ov.get("gl_vendor") or VM.get(v,"Amazon Capital Services")
+            gv   = ov.get("gl_vendor") or VM.get(v, "Amazon Capital Services")
             gl_l = ov.get("gl_locs")   or LOC.get(l, [])
-            if r: do(f"{l or ''} Amazon".strip(), r, gv, gl_l, fn)
-            else: reconciled.add(fn)
+            if r:
+                do(f"{l or ''} Amazon".strip(), r, gv, gl_l, fn,
+                   vendor_display=gv, entity_display=l or "")
+            else:
+                reconciled.add(fn)
             continue
 
         txt = _pdf(fp)
 
-        # STEP 1: Find statement total FIRST
+        # STEP 1: Find vendor's authoritative statement total
         stmt_total, total_label = find_statement_total(txt)
         if stmt_total:
-            log(f"    Statement total: ${stmt_total:.2f} (via {total_label})")
+            log(f"    Vendor stated total: ${stmt_total:,.2f} (via {total_label})")
         else:
-            log(f"    WARNING: Could not find statement total — will include without validation")
+            log(f"    ❓ Vendor total not found in statement")
 
         # STEP 2: Extract invoices
         parser = PARSERS.get(v) if v else None
@@ -788,10 +1089,12 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
             log(f"  No invoices found ({len(txt)} chars)"); reconciled.add(fn); continue
 
         fb_vendor = ov.get("gl_vendor") or (VM.get(v) if v else "") or ""
-        fb_locs   = ov.get("gl_locs")   or (LOC.get(l,[]) if l else [])
-        fb_label  = f"{l} {v.title()}" if l and v else fn.replace(".pdf","").replace(".xlsx","")[:31]
+        if isinstance(fb_vendor, list): fb_vendor = fb_vendor[0]
+        fb_locs   = ov.get("gl_locs")   or (LOC.get(l, []) if l else [])
+        fb_label  = f"{l} {v.title()}" if l and v else fn.replace(".pdf", "").replace(".xlsx", "")[:31]
 
-        process_rows(fn, fp, rows, fb_label, fb_vendor, fb_locs, stmt_total=stmt_total)
+        process_rows(fn, fp, rows, fb_label, fb_vendor, fb_locs,
+                     stmt_total=stmt_total)
 
     if not srows:
         raise ValueError("No vendor statements were successfully processed.")
@@ -801,19 +1104,31 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
 
     log(f"Building workbook…")
     sdf = pd.DataFrame(srows)
+    BANNER_ROWS = 13  # height of the metadata banner above each detail table
+
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         sdf.to_excel(w, sheet_name="Summary", index=False)
-        for sn in sorted(sheets): sheets[sn].to_excel(w, sheet_name=sn[:31], index=False)
+        for sn in sorted(sheets):
+            sheets[sn].to_excel(w, sheet_name=sn[:31], index=False, startrow=BANNER_ROWS)
     buf.seek(0)
 
     wb = load_workbook(buf)
+
+    # Write banner content + format each detail sheet
     for sn, df in sheets.items():
         s = sn[:31]
-        if s in wb.sheetnames: fmt_detail(wb[s], len(df), len(df.columns))
-    ws = wb["Summary"]; fmt_summary(ws, len(sdf), len(sdf.columns))
+        if s in wb.sheetnames:
+            ws = wb[s]
+            meta = sheet_meta.get(sn, {})
+            _write_banner(ws, meta, BANNER_ROWS)
+            fmt_detail(ws, len(df), len(df.columns), banner_rows=BANNER_ROWS)
 
-    for r in range(2, len(sdf)+2):
+    ws = wb["Summary"]
+    fmt_summary(ws, len(sdf), len(sdf.columns))
+
+    # Hyperlinks from Summary → detail sheets
+    for r in range(2, len(sdf) + 2):
         cl = ws.cell(r, 1); sn = cl.value
         if sn and sn[:31] in wb.sheetnames:
             cl.hyperlink = f"#'{sn[:31]}'!A1"; cl.font = _AL
@@ -822,10 +1137,11 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
     wb.save(out_buf)
     out_buf.seek(0)
 
-    tm=sdf["Matched"].sum(); tv=sdf["Amt Variance"].sum(); tmi=sdf["Missing in GL"].sum()
-    log(f"Done! {len(sheets)+1} sheets — {tm} matched | {tv} variances | {tmi} missing in GL")
-    if total_mismatches:
-        log(f"Excluded (total mismatch): {len(total_mismatches)} file(s): {', '.join(total_mismatches)}")
+    tm = sdf["Matched"].sum(); tv = sdf["Amt Variance"].sum(); tmi = sdf["Missing in GL"].sum()
+    l1_ok    = (sdf["Layer 1 Status"] == "✓ Reconciled").sum()
+    l1_warn  = (sdf["Layer 1 Status"] == "⚠ Manual Review Required").sum()
+    l1_miss  = (sdf["Layer 1 Status"] == "❓ Total Not Found").sum()
+    log(f"Done! {len(sheets)+1} sheets — Layer 1: {l1_ok} reconciled / {l1_warn} review / {l1_miss} no-total | Layer 2: {tm} matched | {tv} variances | {tmi} missing")
 
     skipped = sorted(all_stmt_set - reconciled)
     return out_buf.getvalue(), output_filename, reconciled, skipped
