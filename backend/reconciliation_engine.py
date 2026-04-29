@@ -176,6 +176,19 @@ def find_statement_total(text):
         v = try_float(m.group(1))
         if v: return v, "aging last value"
 
+    # P6: Aging-row total — line of 5+ amount-like values, last is the total
+    # e.g. ".00 .00 .00 749.70 .00 749.70" where the trailing value is TOTAL BALANCE
+    # Triggers on any aging-style row regardless of header detection
+    for line in lines:
+        ls = line.strip()
+        tokens = re.findall(r'(?:^|\s)(\.\d{2}|\d[\d,]*\.\d{2})(?=\s|$)', ' ' + ls)
+        if len(tokens) >= 5:
+            # Aging rows typically have several zero-buckets — sanity check
+            zero_like = sum(1 for t in tokens if t in ('.00', '0.00', '0'))
+            if zero_like >= 2:
+                v = try_float(tokens[-1])
+                if v: return v, "aging row last value"
+
     return None, None
 
 
@@ -336,21 +349,40 @@ def parse_generic(t):
         if typ == 'Credit Memo' and v and v > 0: v = -v
         if v is not None: add(m.group(3), str(v), date=m.group(1), typ=typ, line_idx=line_no)
 
-    # S4: GFS — long number + date + Invoice/Credit + LAST $ amount (Balance Due)
+    # S4: GFS-style — long number + date + Invoice/Credit + amount
+    # Handles all GFS variants:
+    #   "9033865171 03/30/26 INVOICE 787.66"                 (plain, no $)
+    #   "924113414 04/08/26 INVOICE 924113414 48.46"         (with PO column)
+    #   "2003339809 04/20/26 CREDIT MEMO 9034593368 8.15-"   (credit memo, trailing minus)
+    #   "9033821167 03/28/26 Invoice $1,111.47"              (legacy with $)
     GFS_PAT = re.compile(
-        rf'^\s*(\d{{7,12}})\s+({DATE})\s+(Invoice|Credit)\b', re.I | re.M)
+        rf'^\s*(\d{{6,12}})\s+({DATE})\s+(Invoice|Credit\s*Memo|Credit)\b', re.I | re.M)
     for m in GFS_PAT.finditer(t):
         inv = m.group(1)
         line_no = t[:m.start()].count('\n')
         if line_no in inv_lines or is_year(inv): continue
         line_end = t.find('\n', m.end())
         rest = t[m.end():line_end] if line_end != -1 else t[m.end():]
-        all_amts = re.findall(r'(-?\s*\$\s*)(\(?)(\d[\d,]+\.\d{2})(\)?)', rest)
-        if not all_amts: continue
-        prefix, op, digits, cp = all_amts[-1]
-        v = float(digits.replace(',', ''))
-        typ = 'Credit Memo' if m.group(3).lower() == 'credit' else 'Invoice'
-        if '-' in prefix or (op and cp) or typ == 'Credit Memo': v = -v
+
+        # Try $-prefixed amounts first (legacy GFS format)
+        dollar_amts = re.findall(r'(-?\s*\$\s*)(\(?)(\d[\d,]+\.\d{2})(\)?)', rest)
+        v = None
+        if dollar_amts:
+            prefix, op, digits, cp = dollar_amts[-1]
+            v = float(digits.replace(',', ''))
+            if '-' in prefix or (op and cp): v = -v
+        else:
+            # Plain numeric amount, possibly with trailing minus (credit memo) or PO column before
+            # Take the LAST plain amount on the line.
+            m2 = re.search(r'(-?[\d,]+\.\d{2})\s*(-?)\s*$', rest)
+            if m2:
+                v = float(m2.group(1).replace(',', '').lstrip('-'))
+                if m2.group(1).startswith('-') or m2.group(2) == '-':
+                    v = -v
+        if v is None: continue
+
+        typ = 'Credit Memo' if 'credit' in m.group(3).lower() else 'Invoice'
+        if typ == 'Credit Memo' and v > 0: v = -v
         add(inv, v, date=m.group(2), typ=typ, line_idx=line_no)
 
     # S8: Norton/ledger — DATE NUMBER PO AMOUNT CRD/INV type at end
@@ -404,7 +436,112 @@ def parse_generic(t):
         if line_no not in inv_lines:
             add(f'CASH{cash_n}', f'-{m.group(2)}', date=m.group(1), typ='Credit Memo', line_idx=line_no)
 
-    # S9: Last resort — $amount lines not yet processed
+    # S10: CKS-style aging detail — "Invoice DATE INV#### DATE age $amount"
+    # Format: "Invoice 03/31/2026 INV4869784 04/21/2026 16 $293.90"
+    # Also handles: "Payment 04/06/2026 PMT6816872 04/06/2026 10 ($244.67)"
+    AGING_PAT = re.compile(
+        rf'^\s*(Invoice|Credit\s*Memo|Payment)\s+({DATE})\s+'
+        rf'([A-Z]+\d{{4,}})\s+{DATE}\s+\d+\s+'
+        r'\(?\$?(-?[\d,]+\.\d{2})\)?\s*$', re.M | re.I)
+    for m in AGING_PAT.finditer(t):
+        line_no = t[:m.start()].count('\n')
+        if line_no in inv_lines: continue
+        type_word = m.group(1)
+        v_str = m.group(4)
+        # Check if amount was wrapped in parens (= negative)
+        full_match = m.group(0)
+        is_paren_neg = '(' in full_match and ')' in full_match[full_match.index(v_str):]
+        v = float(v_str.replace(',', '').lstrip('-'))
+        if is_paren_neg or v_str.startswith('-'):
+            v = -v
+        # Determine type
+        tw = type_word.lower()
+        if 'payment' in tw:
+            typ = 'Payment'
+            if v > 0: v = -v  # payments reduce balance
+        elif 'credit' in tw:
+            typ = 'Credit Memo'
+            if v > 0: v = -v
+        else:
+            typ = 'Invoice'
+        add(m.group(3), v, date=m.group(2), typ=typ, line_idx=line_no)
+
+    # S11: IN-prefix doc — "IN3760500 4/6/2026 IN 2026-04-06 ... 5/6/2026 1,320.56"
+    # Doc number is letters+digits, line ends with the amount
+    INPREFIX_PAT = re.compile(
+        rf'^\s*([A-Z]{{2,4}}\d{{4,}})\s+({DATE})\s+([A-Z]{{2,3}})\b.*?'
+        r'\b(-?\(?[\d,]+\.\d{2}\)?)\s*$', re.M)
+    for m in INPREFIX_PAT.finditer(t):
+        line_no = t[:m.start()].count('\n')
+        if line_no in inv_lines: continue
+        typ_code = m.group(3).upper()
+        v_str = m.group(4).strip()
+        is_neg = (v_str.startswith('(') and v_str.endswith(')')) or v_str.startswith('-')
+        v = float(v_str.strip('()').lstrip('-').replace(',', ''))
+        if is_neg: v = -v
+        if typ_code in ('CR', 'CM', 'CN'):
+            typ = 'Credit Memo'
+            if v > 0: v = -v
+        elif typ_code in ('PY', 'UC', 'PMT'):
+            typ = 'Payment'
+        else:
+            typ = 'Invoice'
+        add(m.group(1), v, date=m.group(2), typ=typ, line_idx=line_no)
+
+    # S12: Arcadia-style — "DATE TYPE DOC# REF DATE Amount1 Amount2 Amount3"
+    # Capture the MIDDLE amount (Outstanding), not first (Original) or last (Balance)
+    ARCADIA_PAT = re.compile(
+        rf'^\s*({DATE})\s+(INV|CR|CM|CRD|DB)\s+(\d{{5,}})\s+\S+\s+'
+        rf'{DATE}\s+([\d,]+\.\d{{2}})\s+([\d,]+\.\d{{2}})\s+([\d,]+\.\d{{2}})\s*$',
+        re.M | re.I)
+    for m in ARCADIA_PAT.finditer(t):
+        line_no = t[:m.start()].count('\n')
+        if line_no in inv_lines: continue
+        typ_code = m.group(2).upper()
+        v = float(m.group(5).replace(',', ''))  # AMOUNT OUTSTANDING (middle)
+        if typ_code in ('CR', 'CM', 'CRD'):
+            typ = 'Credit Memo'
+            if v > 0: v = -v
+        else:
+            typ = 'Invoice'
+        add(m.group(3), v, date=m.group(1), typ=typ, line_idx=line_no)
+
+    # S13: JLA-style alphanumeric reference — "DATE DATE alphanum-ref ... Amount Balance"
+    # "3/16/26 3/16/26 m128554 PO# ESPRESSO 28,880.09 28,880.09"
+    JLA_PAT = re.compile(
+        rf'^\s*({DATE})\s+{DATE}\s+([a-zA-Z]+\d{{3,}})\s+\S+.*?'
+        r'\b(\d[\d,]*\.\d{2})\s+\d[\d,]*\.\d{2}\s*$', re.M)
+    for m in JLA_PAT.finditer(t):
+        line_no = t[:m.start()].count('\n')
+        if line_no in inv_lines: continue
+        v = float(m.group(3).replace(',', ''))
+        add(m.group(2), v, date=m.group(1), typ='Invoice', line_idx=line_no)
+
+    # S14: No invoice number — "DATE Type $Amount $Amount $Amount" (e.g. AVIT)
+    # Synthesize invoice key from date so the row appears in output (Layer 1 still validates).
+    # Only run if very few rows have been extracted so far (avoid noise on rich statements).
+    if len(rows) < 2:
+        NOINV_PAT = re.compile(
+            rf'^\s*({DATE})\s+(Invoice|Credit\s*Memo|Payment)\s+'
+            r'\$([\d,]+\.\d{2})\s+\$[\d,]+\.\d{2}', re.M | re.I)
+        for m in NOINV_PAT.finditer(t):
+            line_no = t[:m.start()].count('\n')
+            if line_no in inv_lines: continue
+            tw = m.group(2).lower()
+            v = float(m.group(3).replace(',', ''))
+            if 'credit' in tw:
+                typ = 'Credit Memo'
+                if v > 0: v = -v
+            elif 'payment' in tw:
+                typ = 'Payment'
+                if v > 0: v = -v
+            else:
+                typ = 'Invoice'
+            # Synthetic invoice key — clearly artificial so it lands as "Missing in GL"
+            synth_inv = f"STMT-{m.group(1).replace('/', '')}"
+            add(synth_inv, v, date=m.group(1), typ=typ, line_idx=line_no)
+
+    # S9: Last resort — $amount lines not yet processed (runs LAST so specific strategies win)
     for i, line in enumerate(lines):
         if i in inv_lines: continue
         if re.search(r'\$[\d,]+\.\d{2}', line):
@@ -501,9 +638,12 @@ def mi(inv, lk):
         inv.zfill(10) if inv.isdigit() and len(inv)<10 else None,
         f"INV-{inv}" if inv.isdigit() else None,
         f"INV{inv}" if inv.isdigit() else None,
-        _re.sub(r'^INV[-\s]?', '', inv) if inv.upper().startswith('INV') else None,
-        (_re.sub(r'^INV[-\s]?', '', inv)).lstrip('0') if inv.upper().startswith('INV') else None,
     ]
+    # Strip ANY leading alpha prefix (INV, IN, PMT, CR, CM, etc.) and also try lstripped
+    m = _re.match(r'^([A-Z]+)[-\s]?(\d+)$', inv, _re.I)
+    if m:
+        num = m.group(2)
+        candidates.extend([num, num.lstrip("0") or num])
     for c in candidates:
         if c and c in lk: return c, lk[c]
     return None, None
@@ -777,19 +917,27 @@ def smart_invoice_match(raw_rows, gl, log_fn=None):
         return []
 
     import re as _re
+
+    def _gen_variants(raw):
+        """Generate all reasonable invoice-number variants for matching against GL."""
+        raw = str(raw).strip()
+        out = [raw, raw.lstrip("0") or raw]
+        if raw.isdigit():
+            if len(raw) < 10:
+                out.append(raw.zfill(10))
+            out.extend([f"INV-{raw}", f"INV{raw}"])
+        # Strip any leading alpha prefix (INV, IN, PMT, CR, CM, etc.)
+        m = _re.match(r'^([A-Z]+)[-\s]?(\d+)$', raw, _re.I)
+        if m:
+            num = m.group(2)
+            out.extend([num, num.lstrip("0") or num])
+        return [v for v in out if v]
+
     variants = {}
     for r in inv_rows:
         raw = str(r["Invoice"]).strip()
-        candidates = [
-            raw, raw.lstrip("0") or raw,
-            raw.zfill(10) if raw.isdigit() and len(raw)<10 else None,
-            f"INV-{raw}" if raw.isdigit() else None,
-            f"INV{raw}" if raw.isdigit() else None,
-            _re.sub(r'^INV[-\s]?', '', raw) if raw.upper().startswith('INV') else None,
-            (_re.sub(r'^INV[-\s]?', '', raw)).lstrip('0') if raw.upper().startswith('INV') else None,
-        ]
-        for v in candidates:
-            if v and v.strip(): variants[v] = raw
+        for v in _gen_variants(raw):
+            variants[v] = raw
 
     gl_hit = gl[gl["Document number"].isin(variants.keys())].copy()
 
@@ -803,15 +951,7 @@ def smart_invoice_match(raw_rows, gl, log_fn=None):
     for (vendor, loc_id), grp in gl_hit.groupby(["Vendor name","Location ID"]):
         gl_docs = set(grp["Document number"].tolist())
         sub = [r for r in inv_rows
-               if any(v in gl_docs for v in [
-                   str(r["Invoice"]).strip(),
-                   str(r["Invoice"]).strip().lstrip("0"),
-                   str(r["Invoice"]).strip().zfill(10)
-                   if str(r["Invoice"]).strip().isdigit()
-                   and len(str(r["Invoice"]).strip()) < 10 else None,
-                   f"INV-{str(r['Invoice']).strip()}"
-                   if str(r["Invoice"]).strip().isdigit() else None,
-               ] if v)]
+               if any(v in gl_docs for v in _gen_variants(r["Invoice"]))]
 
         if sub:
             total_inv = len(inv_rows)
@@ -872,36 +1012,85 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
            entity_display=None, stmt_date=None):
         """
         Build one sheet with reconciliation results + Layer 1/2 metadata.
-        - vendor_stated_total: authoritative total from the vendor's PDF (or None if not found)
-        - All rows get written; Layer 1 failures are FLAGGED, never excluded.
+        - If raw is empty → creates a stub sheet flagged "Extraction Failed".
+        - Payments / Unapplied Cash appear on sheet but are NOT reconciled (per spec).
+        - Layer 1 failures STAY in output; never excluded.
         """
-        inv_rows = [r for r in raw if r["Type"] not in SKIP_TYPES]
-        if not inv_rows:
-            log(f"    (all payments — skipped)"); reconciled.add(src); return
-
         base_sn = sn[:31]; sn2 = base_sn; n = 1
         while sn2 in sheets:
             sn2 = f"{base_sn[:28]} {n:02d}"; n += 1
         sn = sn2
 
+        # ── Extraction failed: create stub sheet with banner only ──
+        if not raw:
+            df = pd.DataFrame([{
+                "Date": "", "Invoice #": "—", "Type": "—",
+                "Stmt Amount": None, "GL Amount": None, "Variance": None,
+                "Status": "⚠ Extraction Failed",
+            }])
+            sheets[sn] = df
+            sheet_meta[sn] = {
+                "vendor_display":      vendor_display or gv or "Unknown",
+                "entity_display":      entity_display or "Unknown",
+                "stmt_date":           stmt_date or "",
+                "source_file":         src,
+                "vendor_stated_total": vendor_stated_total,
+                "extracted_total":     0.0,
+                "l1_variance":         None,
+                "l1_status":           "⚠ Extraction Failed",
+                "gl_total":            0.0,
+                "net_variance":        0.0,
+                "l2_status":           "— (no extraction)",
+            }
+            srows.append({
+                "Statement":         sn,
+                "Source File":       src,
+                "Items":             0,
+                "Matched":           0,
+                "Amt Variance":      0,
+                "Missing in GL":     0,
+                "Vendor Stmt Total": round(vendor_stated_total, 2) if vendor_stated_total is not None else None,
+                "Extracted Total":   0.0,
+                "Layer 1 Variance":  None,
+                "Layer 1 Status":    "⚠ Extraction Failed",
+                "GL Total":          0.0,
+                "Net Variance":      0.0,
+                "Layer 2 Status":    "— (no extraction)",
+            })
+            reconciled.add(src)
+            log(f"    ⚠ Extraction failed — stub sheet created for manual review")
+            return
+
+        # ── Build the data table: ALL rows appear (including payments) ──
         lk = glk(gl, gv, gl_l); recon = []
-        for it in inv_rows:
-            inv = str(it["Invoice"]).strip(); sa = round(it["Amount"], 2)
+        for it in raw:
+            inv = str(it["Invoice"]).strip()
+            sa = round(it["Amount"], 2)
+            type_str = it.get("Type", "Invoice")
+
+            if type_str in SKIP_TYPES:
+                # Payments / Unapplied Cash — show on sheet but skip GL lookup
+                recon.append({
+                    "Date": it["Date"], "Invoice #": inv, "Type": type_str,
+                    "Stmt Amount": sa, "GL Amount": None, "Variance": None,
+                    "Status": f"{type_str} — Not Reconciled",
+                })
+                continue
+
             mk, ga = mi(inv, lk)
             if mk is not None:
                 ga = round(ga, 2); v = round(sa - ga, 2)
                 st = "Matched" if abs(v) < 0.015 else "Amount Variance"
-                recon.append({"Date": it["Date"], "Invoice #": inv, "Type": it["Type"],
+                recon.append({"Date": it["Date"], "Invoice #": inv, "Type": type_str,
                               "Stmt Amount": sa, "GL Amount": ga, "Variance": v, "Status": st})
             else:
-                recon.append({"Date": it["Date"], "Invoice #": inv, "Type": it["Type"],
+                recon.append({"Date": it["Date"], "Invoice #": inv, "Type": type_str,
                               "Stmt Amount": sa, "GL Amount": None, "Variance": None,
                               "Status": "Missing in GL"})
 
         df = pd.DataFrame(recon); sheets[sn] = df
 
-        # ── Layer 1: vendor stated total vs extracted total ──
-        # Extracted total = sum of ALL rows including payments (those reduce balance on statement)
+        # ── Layer 1: vendor stated total vs extracted total (sum of ALL rows) ──
         extracted_total = round(sum(r["Amount"] for r in raw), 2)
         if vendor_stated_total is not None:
             l1_var = round(extracted_total - vendor_stated_total, 2)
@@ -914,15 +1103,18 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
             l1_var = None
             l1_status = "❓ Total Not Found"
 
-        # ── Layer 2: GL comparison ──
-        m_count = len(df[df.Status == "Matched"])
-        v_count = len(df[df.Status == "Amount Variance"])
-        mig_count = len(df[df.Status == "Missing in GL"])
-        gl_total = float(df["GL Amount"].sum()) if df["GL Amount"].notna().any() else 0.0
-        extracted_inv_total = float(df["Stmt Amount"].sum())
+        # ── Layer 2: GL comparison (count only invoice/credit-memo rows, not payments) ──
+        recon_df = df[~df.Status.str.contains("Not Reconciled", na=False)]
+        m_count = len(recon_df[recon_df.Status == "Matched"])
+        v_count = len(recon_df[recon_df.Status == "Amount Variance"])
+        mig_count = len(recon_df[recon_df.Status == "Missing in GL"])
+        gl_total = float(recon_df["GL Amount"].sum()) if recon_df["GL Amount"].notna().any() else 0.0
+        extracted_inv_total = float(recon_df["Stmt Amount"].sum())
         net_var = round(extracted_inv_total - gl_total, 2)
 
-        if v_count == 0 and mig_count == 0:
+        if m_count + v_count + mig_count == 0:
+            l2_status = "— (no invoices to reconcile)"
+        elif v_count == 0 and mig_count == 0:
             l2_status = "✓ All Matched"
         else:
             issues = []
@@ -970,14 +1162,20 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
         Layer 1 reconciliation happens inside do() and surfaces as a flag.
         """
         smart = smart_invoice_match(rows, gl, log)
-        if smart:
-            # Multi-group from smart match: vendor_stated_total is the GRAND total only.
-            # If there's just 1 group, the grand total IS that group's total. Otherwise
-            # we can't validate per-group sub-totals here, so mark as Total Not Found.
+        if smart and len(smart) == 1:
+            # Single vendor/location identified — pass ALL rows (including payments
+            # and Missing-in-GL invoices) so the sheet is complete and Layer 1 reconciles.
+            sg = smart[0]
+            do(sg["label"], rows, sg["vendor"], [sg["loc_id"]], fn,
+               vendor_stated_total=stmt_total,
+               vendor_display=sg["vendor"],
+               entity_display=sg["loc_id"],
+               stmt_date=stmt_date)
+        elif smart:
+            # Multi-vendor statement — split into per-vendor sheets, no per-sheet vendor total
             for sg in smart:
-                per_sheet_total = stmt_total if len(smart) == 1 else None
                 do(sg["label"], sg["rows"], sg["vendor"], [sg["loc_id"]], fn,
-                   vendor_stated_total=per_sheet_total,
+                   vendor_stated_total=None,
                    vendor_display=sg["vendor"],
                    entity_display=sg["loc_id"],
                    stmt_date=stmt_date)
@@ -992,109 +1190,160 @@ def run_reconciliation(gl_path, stmt_paths, log_fn=None, file_overrides=None):
     # ──────────────────────────────────────────────────────────────────────
     #  Per-statement loop
     # ──────────────────────────────────────────────────────────────────────
+    # Track which input files have produced at least one sheet.
+    # HARD RULE: at the end, every input file must have ≥ 1 sheet — no exceptions.
+    files_with_sheets = set()
+    # Wrap do() so we can track which source files produced sheets
+    _orig_do = do
+    def do(sn, raw, gv, gl_l, src, **kwargs):
+        result = _orig_do(sn, raw, gv, gl_l, src, **kwargs)
+        files_with_sheets.add(src)
+        return result
+
+    def make_stub(fn, label_suffix, l1_status, vendor_stated=None,
+                  vendor_display=None, entity_display=None):
+        """Create a stub sheet for a file that couldn't be processed normally."""
+        stub_label = (fn.replace(".pdf", "").replace(".xlsx", ""))[:31]
+        do(stub_label, [], "", [], fn,
+           vendor_stated_total=vendor_stated,
+           vendor_display=vendor_display or "Unknown",
+           entity_display=entity_display or "Unknown")
+
     for fn in sorted(stmts):
-        fp   = stmt_map[fn]
-        ov   = file_overrides.get(fn, {})
-        l, v = fi(fn)
-        log(f"Processing: {fn}")
+        try:
+            fp   = stmt_map[fn]
+            ov   = file_overrides.get(fn, {})
+            l, v = fi(fn)
+            log(f"Processing: {fn}")
 
-        # ── US Paper: multi-entity statement with explicit per-entity sub-totals ──
-        if v == "US PAPER":
+            # ── US Paper: multi-entity statement with explicit per-entity sub-totals ──
+            if v == "US PAPER":
+                txt = _pdf(fp)
+                us = parse_us_paper(txt)
+                section_totals = find_section_totals(txt)
+                sub_total_map = {}
+                for s in section_totals:
+                    sub_total_map[s["section"].strip().upper()] = s["total"]
+
+                def lookup_subtotal(canonical_name):
+                    up = canonical_name.upper()
+                    if up in sub_total_map:
+                        return sub_total_map[up]
+                    for ku, t in sub_total_map.items():
+                        if up.startswith(ku) and (len(ku) >= 8 or len(ku.split()) >= 2):
+                            return t
+                    for ku, t in sub_total_map.items():
+                        if ku.startswith(up) and (len(up) >= 5 or len(up.split()) >= 2):
+                            return t
+                    return None
+
+                usm = {
+                    "MAD DOGS AND ENGLISHMEN": (["MAD-80041"], "MD Us Paper", "MAD DOGS AND ENGLISHMEN"),
+                    "OXFORD EXCHANGE LLC":     (["OE","OE-96001","OE-96003","OE-96004","OE-96005","OE-96008","OE-96011"], "OE Us Paper", "OXFORD EXCHANGE LLC"),
+                    "Predalina LLC":           (["PRED","PRED-82000"], "PRED Us Paper", "Predalina LLC"),
+                    "SH-19":                   (["SH-93004"], "SH19 Us Paper", "SH-19"),
+                    "The Library St Pete":     (["LIB-96100"], "LIB Us Paper", "The Library St Pete"),
+                    "The Stovall House":       (["SH-93001","SH-93002"], "SH Us Paper", "The Stovall House"),
+                }
+                grand_total, _ = find_statement_total(txt)
+                found_sub = False
+                for canonical, ir in us.items():
+                    if canonical in usm and ir:
+                        locs2, sn2, entity_disp = usm[canonical]
+                        sub_total = lookup_subtotal(canonical)
+                        log(f"  Sub: {canonical} (vendor sub-total: ${sub_total:.2f})" if sub_total else f"  Sub: {canonical}")
+                        do(sn2, ir, "US PAPER CORP", locs2, fn,
+                           vendor_stated_total=sub_total,
+                           vendor_display="US PAPER CORP",
+                           entity_display=entity_disp)
+                        found_sub = True
+                if not found_sub:
+                    log(f"  ⚠ No US Paper entity sections matched — creating stub")
+                    make_stub(fn, "US Paper",
+                              l1_status="⚠ Extraction Failed",
+                              vendor_stated=grand_total,
+                              vendor_display="US PAPER CORP",
+                              entity_display=l or "Unknown")
+                continue
+
+            if fn.endswith(".xlsx") and "AMAZON" in fn.upper():
+                r = parse_amazon_xl(fp)
+                gv   = ov.get("gl_vendor") or VM.get(v, "Amazon Capital Services")
+                gl_l = ov.get("gl_locs")   or LOC.get(l, [])
+                if r:
+                    do(f"{l or ''} Amazon".strip(), r, gv, gl_l, fn,
+                       vendor_display=gv, entity_display=l or "")
+                else:
+                    log(f"  ⚠ Amazon XLSX parse returned no rows — creating stub")
+                    make_stub(fn, "Amazon",
+                              l1_status="⚠ Extraction Failed",
+                              vendor_display="Amazon Capital Services",
+                              entity_display=l or "")
+                continue
+
             txt = _pdf(fp)
-            us = parse_us_paper(txt)
-            section_totals = find_section_totals(txt)
-            # Map raw section name → sub-total
-            sub_total_map = {}
-            for s in section_totals:
-                sn_raw = s["section"].strip()
-                sub_total_map[sn_raw.upper()] = s["total"]
 
-            def lookup_subtotal(canonical_name):
-                """
-                Match canonical entity name to extracted section total.
-                Handles line-break truncation (e.g. section 'MAD DOGS AND' → canonical 'MAD DOGS AND ENGLISHMEN').
-                Requires substantive overlap — never matches just on a generic word like 'THE'.
-                """
-                up = canonical_name.upper()
-                # Pass 1: exact match
-                if up in sub_total_map:
-                    return sub_total_map[up]
-                # Pass 2: canonical starts with section (handles truncation)
-                # Require section to be either ≥8 chars OR have ≥2 words to avoid generic prefixes like "THE"
-                for ku, t in sub_total_map.items():
-                    if up.startswith(ku) and (len(ku) >= 8 or len(ku.split()) >= 2):
-                        return t
-                # Pass 3: section starts with canonical (canonical is shorter)
-                for ku, t in sub_total_map.items():
-                    if ku.startswith(up) and (len(up) >= 5 or len(up.split()) >= 2):
-                        return t
-                return None
-
-            usm = {
-                "MAD DOGS AND ENGLISHMEN": (["MAD-80041"], "MD Us Paper", "MAD DOGS AND ENGLISHMEN"),
-                "OXFORD EXCHANGE LLC":     (["OE","OE-96001","OE-96003","OE-96004","OE-96005","OE-96008","OE-96011"], "OE Us Paper", "OXFORD EXCHANGE LLC"),
-                "Predalina LLC":           (["PRED","PRED-82000"], "PRED Us Paper", "Predalina LLC"),
-                "SH-19":                   (["SH-93004"], "SH19 Us Paper", "SH-19"),
-                "The Library St Pete":     (["LIB-96100"], "LIB Us Paper", "The Library St Pete"),
-                "The Stovall House":       (["SH-93001","SH-93002"], "SH Us Paper", "The Stovall House"),
-            }
-            found_sub = False
-            for canonical, ir in us.items():
-                if canonical in usm and ir:
-                    locs2, sn2, entity_disp = usm[canonical]
-                    sub_total = lookup_subtotal(canonical)
-                    log(f"  Sub: {canonical} (vendor sub-total: ${sub_total:.2f})" if sub_total else f"  Sub: {canonical}")
-                    do(sn2, ir, "US PAPER CORP", locs2, fn,
-                       vendor_stated_total=sub_total,
-                       vendor_display="US PAPER CORP",
-                       entity_display=entity_disp)
-                    found_sub = True
-            if not found_sub:
-                reconciled.add(fn)
-            continue
-
-        if fn.endswith(".xlsx") and "AMAZON" in fn.upper():
-            r = parse_amazon_xl(fp)
-            gv   = ov.get("gl_vendor") or VM.get(v, "Amazon Capital Services")
-            gl_l = ov.get("gl_locs")   or LOC.get(l, [])
-            if r:
-                do(f"{l or ''} Amazon".strip(), r, gv, gl_l, fn,
-                   vendor_display=gv, entity_display=l or "")
+            # STEP 1: Find vendor's authoritative statement total
+            stmt_total, total_label = find_statement_total(txt)
+            if stmt_total:
+                log(f"    Vendor stated total: ${stmt_total:,.2f} (via {total_label})")
             else:
-                reconciled.add(fn)
-            continue
+                log(f"    ❓ Vendor total not found in statement")
 
-        txt = _pdf(fp)
+            # STEP 2: Extract invoices
+            parser = PARSERS.get(v) if v else None
+            rows = None
+            if parser and parser != parse_us_paper:
+                rows = parser(txt)
+            if not rows:
+                rows = parse_wrights(txt)
+            if not rows:
+                rows = parse_generic(txt)
 
-        # STEP 1: Find vendor's authoritative statement total
-        stmt_total, total_label = find_statement_total(txt)
-        if stmt_total:
-            log(f"    Vendor stated total: ${stmt_total:,.2f} (via {total_label})")
-        else:
-            log(f"    ❓ Vendor total not found in statement")
+            if not rows and not txt.strip():
+                log(f"  ⚠ No text extracted from PDF — creating stub sheet")
+                make_stub(fn, "PDF unreadable",
+                          l1_status="⚠ Extraction Failed",
+                          vendor_display="Unknown (PDF unreadable)",
+                          entity_display=l or "Unknown")
+                continue
+            if not rows:
+                log(f"  ⚠ No invoices extracted ({len(txt)} chars of text) — creating stub sheet")
+                make_stub(fn, "extraction failed",
+                          l1_status="⚠ Extraction Failed",
+                          vendor_stated=stmt_total,
+                          vendor_display="Unknown (extraction failed)",
+                          entity_display=l or "Unknown")
+                continue
 
-        # STEP 2: Extract invoices
-        parser = PARSERS.get(v) if v else None
-        rows = None
-        if parser and parser != parse_us_paper:
-            rows = parser(txt)
-        if not rows:
-            rows = parse_wrights(txt)
-        if not rows:
-            rows = parse_generic(txt)
+            fb_vendor = ov.get("gl_vendor") or (VM.get(v) if v else "") or ""
+            if isinstance(fb_vendor, list): fb_vendor = fb_vendor[0]
+            fb_locs   = ov.get("gl_locs")   or (LOC.get(l, []) if l else [])
+            fb_label  = f"{l} {v.title()}" if l and v else fn.replace(".pdf", "").replace(".xlsx", "")[:31]
 
-        if not rows and not txt.strip():
-            log(f"  No text extracted"); reconciled.add(fn); continue
-        if not rows:
-            log(f"  No invoices found ({len(txt)} chars)"); reconciled.add(fn); continue
+            process_rows(fn, fp, rows, fb_label, fb_vendor, fb_locs,
+                         stmt_total=stmt_total)
+        except Exception as e:
+            log(f"  ❌ EXCEPTION processing {fn}: {type(e).__name__}: {e}")
+            try:
+                make_stub(fn, "exception",
+                          l1_status="❌ Error",
+                          vendor_display=f"Error: {type(e).__name__}",
+                          entity_display="See logs")
+            except Exception as e2:
+                log(f"  ❌ Could not even create stub: {e2}")
 
-        fb_vendor = ov.get("gl_vendor") or (VM.get(v) if v else "") or ""
-        if isinstance(fb_vendor, list): fb_vendor = fb_vendor[0]
-        fb_locs   = ov.get("gl_locs")   or (LOC.get(l, []) if l else [])
-        fb_label  = f"{l} {v.title()}" if l and v else fn.replace(".pdf", "").replace(".xlsx", "")[:31]
-
-        process_rows(fn, fp, rows, fb_label, fb_vendor, fb_locs,
-                     stmt_total=stmt_total)
+    # ── HARD GUARD: every input file must have at least one sheet ──
+    for fn in sorted(stmts):
+        if fn not in files_with_sheets:
+            log(f"  ⚠ Final guard: {fn} produced no sheet — creating stub")
+            try:
+                make_stub(fn, "guard",
+                          l1_status="⚠ No sheet produced",
+                          vendor_display="Unknown",
+                          entity_display="Unknown")
+            except Exception as e:
+                log(f"  ❌ Final guard could not create stub: {e}")
 
     if not srows:
         raise ValueError("No vendor statements were successfully processed.")
