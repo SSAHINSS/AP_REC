@@ -67,11 +67,12 @@ export function downloadFile(jobId) {
     })
 }
 
-export async function analyzeTrends(glFile, entity = '', view = 'vendor') {
+export async function analyzeTrends(glFile, entity = '', view = 'vendor', period = '') {
   const form = new FormData()
   form.append('gl_file', glFile)
   form.append('entity', entity)
   form.append('view', view)
+  form.append('period', period)
 
   const res = await fetch(`${BASE}/trends/analyze`, {
     method: 'POST',

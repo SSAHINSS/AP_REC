@@ -137,6 +137,7 @@ async def trends_analyze(
     gl_file: UploadFile = File(...),
     entity: str = Form(""),
     view: str = Form("vendor"),
+    period: str = Form(""),
     _: bool = Depends(require_auth),
 ):
     if view not in ("vendor", "account"):
@@ -146,7 +147,7 @@ async def trends_analyze(
         with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
             f.write(await gl_file.read())
             tmp = f.name
-        return analyze_trends(tmp, entity=entity or None, view=view)
+        return analyze_trends(tmp, entity=entity or None, view=view, period=period or None)
     except HTTPException:
         raise
     except Exception as e:

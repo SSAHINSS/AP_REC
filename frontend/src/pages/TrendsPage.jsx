@@ -34,14 +34,15 @@ export default function TrendsPage({ onLogout }) {
   const [data,    setData]      = useState(null)
   const [entity,  setEntity]    = useState('')      // '' = whole org
   const [view,    setView]      = useState('vendor')
+  const [period,  setPeriod]    = useState('')      // '' = latest month in data
   const [openGroups, setOpenGroups] = useState({})  // group name -> bool
   const [showFlagsOnly, setShowFlagsOnly] = useState(false)
 
-  async function run(nextEntity = entity, nextView = view) {
+  async function run(nextEntity = entity, nextView = view, nextPeriod = period) {
     if (!glFiles[0]) return
     setRunning(true); setError('')
     try {
-      const res = await analyzeTrends(glFiles[0], nextEntity, nextView)
+      const res = await analyzeTrends(glFiles[0], nextEntity, nextView, nextPeriod)
       setData(res)
       setOpenGroups({})
     } catch (e) {
@@ -53,11 +54,15 @@ export default function TrendsPage({ onLogout }) {
 
   function pick(nextEntity) {
     setEntity(nextEntity)
-    run(nextEntity, view)
+    run(nextEntity, view, period)
   }
   function pickView(v) {
     setView(v)
-    run(entity, v)
+    run(entity, v, period)
+  }
+  function pickPeriod(p) {
+    setPeriod(p)
+    run(entity, view, p)
   }
 
   const months = data?.months || []
@@ -111,11 +116,23 @@ export default function TrendsPage({ onLogout }) {
                 <button key={e} onClick={() => pick(e)} style={pill(entity === e)}>{e}</button>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)',
                              textTransform: 'uppercase', letterSpacing: '0.1em', marginRight: 6 }}>View</span>
               <button onClick={() => pickView('vendor')}  style={pill(view === 'vendor')}>By Vendor</button>
               <button onClick={() => pickView('account')} style={pill(view === 'account')}>By GL Account</button>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)',
+                             textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 6px 0 18px' }}>
+                Analysis Month
+              </span>
+              <select value={data.period || ''} onChange={e => pickPeriod(e.target.value)}
+                style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '4px 8px',
+                         background: 'var(--surface)', color: 'var(--text)',
+                         border: '1px solid var(--border)', borderRadius: 2 }}>
+                {(data.available_months || []).slice().reverse().map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
               <span style={{ flex: 1 }} />
               <label style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)',
                               display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>

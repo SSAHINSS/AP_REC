@@ -339,6 +339,45 @@ GROUP_ORDER = [
 # Sales groups are excluded from expense analysis by default
 SALES_GROUPS = {g for g in GROUP_ORDER if "Sales" in g}
 
+# ── Additions for accounts found in the org-wide GL but absent from the ─────
+#    original (LIB-scoped) workbook Group sheet. Assigned by account-range
+#    consistency with existing mappings. Correct here if P&L treatment differs.
+GROUP_MAP.update({
+    "63054": "Other COS",                    # PM Tech Fuel COS (siblings 63050-55 = Other COS)
+    "70105": "Hourly Labor",                 # Hourly Labor - HR
+    "70121": "Hourly Labor",                 # Hourly Labor - FOH Mgmt
+    "70122": "Hourly Labor",                 # Hourly Labor - BOH Mgmt
+    "70123": "Hourly Labor",                 # Hourly Labor - Shuttle
+    "70124": "Hourly Labor",                 # Hourly Labor - Security
+    "70125": "Hourly Labor",                 # Hourly Labor - Housekeeping
+    "70126": "Hourly Labor",                 # Hourly Labor - Programming
+    "70127": "Hourly Labor",                 # Hourly Labor - Membership
+    "70131": "Hourly Labor",                 # Hourly Labor - Commissions
+    "70149": "Hourly Labor",                 # Hourly Labor - Acctg/Admin OT
+    "70226": "Salaried Labor",               # Salaried - Programming
+    "70228": "Salaried Labor",               # Salaried - Events
+    "70229": "Salaried Labor",               # Salaried - Acctg/Admin Bonus
+    "70232": "Salaried Labor",               # Salaried - Commissions
+    "70314": "Salaried Labor",               # Vacation - Acctg/Admin (siblings 70311/13 = Salaried)
+    "72710": "Outside Services",             # Valet Expenses (72700 = Outside Services)
+    "75311": "Misc. Controllable - Other",   # Event Rentals (siblings 75301/75310)
+    "75312": "Misc. Controllable - Other",   # Other Event Expense
+    "75313": "Misc. Controllable - Other",   # Programming Expense
+    "77417": "Insurance",                    # Health Insurance - Offset
+    "77610": "Taxes",                        # State Income Tax
+    "78000": "Services Fees",                # Management Company Fees
+    "78500": "Services Fees",                # Affiliates Mgt Co Fees
+})
+
+# Income / non-operating accounts — not expenses, excluded from trends
+NON_EXPENSE_ACCOUNTS = {
+    "78100",  # Interest Income
+    "79003",  # Other Income
+    "79004",  # Gain/Loss
+    "79008",  # Monthly Member Fees
+    "79009",  # Recognized Member Initiation Fees
+}
+
 
 def load_gl(gl_path):
     df = pd.read_csv(gl_path)
@@ -350,7 +389,13 @@ def load_gl(gl_path):
     df = df.dropna(subset=["Posting date"])
     df["Entity"] = df["Location ID"].str.split("-").str[0].str.upper()
     df["Period"] = df["Posting date"].dt.to_period("M")
-    df["Group"] = df["Account no"].map(GROUP_MAP).fillna("Unmapped")
+    df["Group"] = df["Account no"].map(GROUP_MAP)
+    # Balance-sheet accounts (assets/liabilities, < 50000) and income accounts
+    # are not expenses — drop them from trends analysis entirely.
+    acct_num = pd.to_numeric(df["Account no"], errors="coerce").fillna(0)
+    df = df[~((df["Group"].isna()) & (acct_num < 50000))]
+    df = df[~df["Account no"].isin(NON_EXPENSE_ACCOUNTS)]
+    df["Group"] = df["Group"].fillna("Unmapped")
     df["Document number"] = (df.get("Document number", pd.Series(dtype=str))
                              .fillna("").astype(str).str.strip()
                              .str.replace(r"\.0$", "", regex=True)
@@ -405,25 +450,41 @@ def _flag_row(series_by_month, months):
     }
 
 
-def analyze(gl_path, entity=None, view="vendor", include_sales=False):
+def analyze(gl_path, entity=None, view="vendor", include_sales=False, period=None):
     """
     entity : entity prefix (e.g. "LIB") or None for whole org
     view   : "vendor" (rows = vendor) or "account" (rows = GL account)
-    Returns dict ready for JSON:
-      { months, entities, groups: [ {name, rows:[{label, values[12], total, flag?}], totals[12]} ], flags:[...] }
+    period : "YYYY-MM" analysis month — trailing 12 months END at this month.
+             Defaults to the latest month in the data. Lets the user analyze
+             the last CLOSED month when the export includes a partial month.
     """
     df = load_gl(gl_path)
 
     entities = sorted(df["Entity"].unique().tolist())
+    all_months = sorted(df["Period"].unique())
+    available_months = [str(m) for m in all_months]
+
     if entity:
         df = df[df["Entity"] == entity.upper()]
         if df.empty:
-            return {"months": [], "entities": entities, "groups": [], "flags": [],
-                    "error": f"No rows for entity {entity}"}
+            return {"months": [], "entities": entities, "available_months": available_months,
+                    "groups": [], "flags": [], "error": f"No rows for entity {entity}"}
 
-    # Trailing 12 months present in the data
-    months = sorted(df["Period"].unique())[-12:]
+    # Trailing 12 months ending at the selected period (or latest in data)
+    if period:
+        try:
+            end = pd.Period(period, freq="M")
+        except Exception:
+            end = all_months[-1]
+        if end not in all_months:
+            end = all_months[-1]
+    else:
+        end = all_months[-1]
+    months = [m for m in all_months if m <= end][-12:]
     df = df[df["Period"].isin(months)]
+    if df.empty:
+        return {"months": [], "entities": entities, "available_months": available_months,
+                "groups": [], "flags": [], "error": "No rows in selected window"}
     month_labels = [str(m) for m in months]
 
     row_key = "Vendor name" if view == "vendor" else "Account title"
@@ -472,6 +533,8 @@ def analyze(gl_path, entity=None, view="vendor", include_sales=False):
     return {
         "engine": ENGINE_VERSION,
         "months": month_labels,
+        "available_months": available_months,
+        "period": str(end),
         "entities": entities,
         "entity": entity.upper() if entity else None,
         "view": view,
