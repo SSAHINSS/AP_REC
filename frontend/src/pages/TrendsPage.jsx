@@ -27,6 +27,26 @@ function FlagChip({ flag }) {
   )
 }
 
+const CROSSHAIR_CSS = `
+  .trend-wrap { position: relative; }
+  .trend-table td, .trend-table th { position: relative; }
+  /* Column beam: tall overlay from the hovered cell, clipped by the scroll container */
+  .trend-table td:hover::after,
+  .trend-table th:hover::after {
+    content: ""; position: absolute; left: 0; top: -6000px;
+    width: 100%; height: 12000px;
+    background: rgba(255,112,48,0.07);
+    pointer-events: none; z-index: 3;
+  }
+  /* Row beam */
+  .trend-table tbody tr:hover td {
+    background-color: color-mix(in srgb, var(--surface), #FF7030 10%) !important;
+  }
+  .trend-table tbody tr:hover td:first-child {
+    box-shadow: inset 2px 0 0 var(--ox);
+  }
+`
+
 export default function TrendsPage({ onLogout }) {
   const [glFiles, setGlFiles]   = useState([])
   const [running, setRunning]   = useState(false)
@@ -36,6 +56,7 @@ export default function TrendsPage({ onLogout }) {
   const [view,    setView]      = useState('vendor')
   const [period,  setPeriod]    = useState('')      // '' = latest month in data
   const [openGroups, setOpenGroups] = useState({})  // group name -> bool
+  const [queueOpen, setQueueOpen] = useState(true)
   const [showFlagsOnly, setShowFlagsOnly] = useState(false)
 
   async function run(nextEntity = entity, nextView = view, nextPeriod = period) {
@@ -72,8 +93,9 @@ export default function TrendsPage({ onLogout }) {
   })
 
   return (
-    <div style={{ minHeight: '100vh', maxWidth: 1280, margin: '0 auto', padding: '48px 24px 80px',
+    <div style={{ minHeight: '100vh', maxWidth: 1760, margin: '0 auto', padding: '48px 24px 80px',
                   display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <style>{CROSSHAIR_CSS}</style>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -145,12 +167,20 @@ export default function TrendsPage({ onLogout }) {
 
           {/* Flags summary — the automated "Summary" tab, worst first */}
           {data.flags.length > 0 && (
-            <div className="card">
-              <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ox)',
-                            letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>
-                Review Queue — {data.flags.length} flags, worst first
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 320, overflowY: 'auto' }}>
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <button onClick={() => setQueueOpen(q => !q)}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                         background: 'transparent', border: 'none', cursor: 'pointer',
+                         padding: '14px 16px', color: 'var(--text)' }}>
+                <span style={{ fontFamily: 'var(--mono)', color: 'var(--ox)', fontSize: 12 }}>{queueOpen ? '▾' : '▸'}</span>
+                <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ox)',
+                               letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                  Review Queue — {data.flags.length} flags, worst first
+                </span>
+              </button>
+              {queueOpen && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 320,
+                            overflowY: 'auto', padding: '0 16px 14px' }}>
                 {data.flags.map((f, i) => (
                   <div key={i} style={{ display: 'grid', gridTemplateColumns: '130px 160px 1fr 110px 110px 90px',
                                         gap: 8, alignItems: 'center', padding: '5px 8px',
@@ -165,6 +195,7 @@ export default function TrendsPage({ onLogout }) {
                   </div>
                 ))}
               </div>
+              )}
             </div>
           )}
 
@@ -192,25 +223,27 @@ export default function TrendsPage({ onLogout }) {
                 </button>
 
                 {open && (
-                  <div style={{ overflowX: 'auto', borderTop: '1px solid var(--border)' }}>
-                    <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}>
+                  <div className="trend-wrap" style={{ overflowX: 'auto', overflowY: 'hidden', borderTop: '1px solid var(--border)' }}>
+                    <table className="trend-table" style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}>
                       <thead>
                         <tr>
-                          <th style={th({ textAlign: 'left', minWidth: 220, position: 'sticky', left: 0, background: 'var(--surface)' })}>
+                          <th style={th({ textAlign: 'left', minWidth: 220, position: 'sticky', left: 0, zIndex: 2, background: 'var(--surface)' })}>
                             {view === 'vendor' ? 'VENDOR' : 'ACCOUNT'}
                           </th>
                           {shortMonths.map((m, i) => (
                             <th key={m} style={th({ color: i === shortMonths.length - 1 ? 'var(--ox)' : 'var(--muted)' })}>{m}</th>
                           ))}
-                          <th style={th({})}>TOTAL</th>
-                          <th style={th({ textAlign: 'left' })}>FLAG</th>
+                          <th style={th({ position: 'sticky', right: 130, zIndex: 2, background: 'var(--surface)' })}>TOTAL</th>
+                          <th style={th({ textAlign: 'left', position: 'sticky', right: 0, zIndex: 2, background: 'var(--surface)', width: 130, minWidth: 130 })}>FLAG</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {rows.map((r, ri) => (
+                        {rows.map((r, ri) => {
+                          const rowBg = ri % 2 ? 'var(--bg)' : 'var(--surface)'
+                          return (
                           <tr key={r.label} style={{ background: ri % 2 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
-                            <td style={td({ textAlign: 'left', position: 'sticky', left: 0,
-                                            background: ri % 2 ? 'var(--bg)' : 'var(--surface)',
+                            <td style={td({ textAlign: 'left', position: 'sticky', left: 0, zIndex: 1,
+                                            background: rowBg,
                                             maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })}>
                               {r.label}
                             </td>
@@ -220,17 +253,18 @@ export default function TrendsPage({ onLogout }) {
                                 fontWeight: i === r.values.length - 1 ? 600 : 400,
                               })}>{MONEY(v)}</td>
                             ))}
-                            <td style={td({ fontWeight: 600 })}>{MONEY(r.total)}</td>
-                            <td style={td({ textAlign: 'left' })}>{r.flag ? <FlagChip flag={r.flag} /> : ''}</td>
+                            <td style={td({ fontWeight: 600, position: 'sticky', right: 130, zIndex: 1, background: rowBg })}>{MONEY(r.total)}</td>
+                            <td style={td({ textAlign: 'left', position: 'sticky', right: 0, zIndex: 1, background: rowBg, width: 130, minWidth: 130 })}>{r.flag ? <FlagChip flag={r.flag} /> : ''}</td>
                           </tr>
-                        ))}
+                          )
+                        })}
                         <tr style={{ borderTop: '1px solid var(--border)' }}>
-                          <td style={td({ textAlign: 'left', fontWeight: 700, position: 'sticky', left: 0, background: 'var(--surface)' })}>TOTAL</td>
+                          <td style={td({ textAlign: 'left', fontWeight: 700, position: 'sticky', left: 0, zIndex: 1, background: 'var(--surface)' })}>TOTAL</td>
                           {g.totals.map((v, i) => (
                             <td key={i} style={td({ fontWeight: 700 })}>{MONEY(v)}</td>
                           ))}
-                          <td style={td({ fontWeight: 700 })}>{MONEY(g.total)}</td>
-                          <td style={td({})}></td>
+                          <td style={td({ fontWeight: 700, position: 'sticky', right: 130, zIndex: 1, background: 'var(--surface)' })}>{MONEY(g.total)}</td>
+                          <td style={td({ position: 'sticky', right: 0, zIndex: 1, background: 'var(--surface)', width: 130, minWidth: 130 })}></td>
                         </tr>
                       </tbody>
                     </table>
@@ -256,11 +290,11 @@ const pill = active => ({
 })
 
 const th = extra => ({
-  padding: '8px 10px', textAlign: 'right', fontWeight: 600, fontSize: 10,
+  padding: '8px 8px', textAlign: 'right', fontWeight: 600, fontSize: 10,
   letterSpacing: '0.06em', color: 'var(--muted)',
   borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', ...extra,
 })
 
 const td = extra => ({
-  padding: '5px 10px', textAlign: 'right', whiteSpace: 'nowrap', ...extra,
+  padding: '5px 8px', textAlign: 'right', whiteSpace: 'nowrap', ...extra,
 })
