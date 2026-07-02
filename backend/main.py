@@ -3,12 +3,13 @@ AP Reconciliation — FastAPI Backend
 """
 import os, shutil, tempfile, uuid, json
 from pathlib import Path
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from reconciliation_engine import run_reconciliation
 from rename_engine import propose_renames, build_zip
+from trends_engine import analyze as analyze_trends
 
 app = FastAPI(title="AP Reconciliation API")
 app.add_middleware(
@@ -129,6 +130,30 @@ async def rename_download(
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=renamed_files.zip"},
     )
+
+# ── Expense Trends — vendor x month analysis with flags ────────────────────
+@app.post("/trends/analyze")
+async def trends_analyze(
+    gl_file: UploadFile = File(...),
+    entity: str = Form(""),
+    view: str = Form("vendor"),
+    _: bool = Depends(require_auth),
+):
+    if view not in ("vendor", "account"):
+        raise HTTPException(status_code=422, detail="view must be 'vendor' or 'account'")
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
+            f.write(await gl_file.read())
+            tmp = f.name
+        return analyze_trends(tmp, entity=entity or None, view=view)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
 
 if __name__ == "__main__":
     import uvicorn

@@ -66,3 +66,22 @@ export function downloadFile(jobId) {
       URL.revokeObjectURL(url)
     })
 }
+
+export async function analyzeTrends(glFile, entity = '', view = 'vendor') {
+  const form = new FormData()
+  form.append('gl_file', glFile)
+  form.append('entity', entity)
+  form.append('view', view)
+
+  const res = await fetch(`${BASE}/trends/analyze`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: form,
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(err.detail || 'Trends analysis failed')
+  }
+  return res.json()
+}
