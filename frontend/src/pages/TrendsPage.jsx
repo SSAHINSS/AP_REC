@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { analyzeTrends, glStatus } from '../api'
+import { analyzeTrends } from '../api'
 
 const MONEY = v =>
   v === 0 || v == null ? '—'
@@ -48,7 +48,7 @@ const CROSSHAIR_CSS = `
 
 export default function TrendsPage() {
   const [stored,  setStored]    = useState(null)   // {filename, uploaded_at} if a GL is saved
-  const [checked, setChecked]   = useState(false)  // finished checking for stored GL
+  const [noGl,    setNoGl]      = useState(false)  // backend says nothing is uploaded yet
   const [running, setRunning]   = useState(false)
   const [error,   setError]     = useState('')
   const [data,    setData]      = useState(null)
@@ -59,35 +59,23 @@ export default function TrendsPage() {
   const [queueOpen, setQueueOpen] = useState(true)
   const [showFlagsOnly, setShowFlagsOnly] = useState(false)
 
-  async function run(nextEntity = entity, nextView = view, nextPeriod = period, fileOverride) {
-    const file = fileOverride !== undefined ? fileOverride : null
-    if (!file && !stored) return
-    setRunning(true); setError('')
+  async function run(nextEntity = entity, nextView = view, nextPeriod = period) {
+    setRunning(true); setError(''); setNoGl(false)
     try {
-      const res = await analyzeTrends(file, nextEntity, nextView, nextPeriod)
+      const res = await analyzeTrends(null, nextEntity, nextView, nextPeriod)
       setData(res)
       setOpenGroups({})
       if (res.gl_filename) setStored({ filename: res.gl_filename, uploaded_at: res.gl_uploaded_at })
     } catch (e) {
-      setError(e.message)
+      if ((e.message || '').includes('No GL')) setNoGl(true)
+      else setError(e.message)
     } finally {
       setRunning(false)
     }
   }
 
-  // On page load: if a GL is already saved for this user, analyze it immediately.
-  useEffect(() => {
-    let alive = true
-    glStatus().then(s => {
-      if (!alive) return
-      setChecked(true)
-      if (s.has_gl) {
-        setStored({ filename: s.filename, uploaded_at: s.uploaded_at })
-        run(entity, view, period, null)
-      }
-    }).catch(() => setChecked(true))
-    return () => { alive = false }
-  }, [])
+  // On page load, analyze the saved GL immediately (backend 422s if none).
+  useEffect(() => { run() }, [])
 
   function pick(nextEntity) {
     setEntity(nextEntity)
@@ -113,7 +101,7 @@ export default function TrendsPage() {
                   display: 'flex', flexDirection: 'column', gap: 24 }}>
       <style>{CROSSHAIR_CSS}</style>
 
-      {checked && !stored && !data && (
+      {noGl && !data && (
         <div className="card" style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>
           No GL on file yet. Upload it on the <b style={{ color: 'var(--ox)' }}>Home</b> page —
           every module reads the same saved GL.
