@@ -85,6 +85,7 @@ export default function TrendsPage() {
   function pickPeriod(p)     { setPeriod(p);          run(entity, view, p) }
 
   const months = data?.months || []
+  const analysisIdx = data ? months.indexOf(data.period) : -1
   const shortMonths = months.map(m => {
     const [y, mo] = m.split('-')
     return `${['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo]} '${y.slice(2)}`
@@ -271,7 +272,8 @@ export default function TrendsPage() {
                     {shortMonths.map((m, i) => (
                       <th key={m} onClick={() => clickSort(i)}
                           style={th({ cursor: 'pointer',
-                                      color: i === shortMonths.length - 1 ? 'var(--ox)' : 'var(--muted)' })}>
+                                      color: i === analysisIdx ? 'var(--ox)' : 'var(--muted)',
+                                      fontWeight: i === analysisIdx ? 700 : 600 })}>
                         {m}{arrow(i)}
                       </th>
                     ))}
@@ -295,7 +297,7 @@ export default function TrendsPage() {
                       {r.values.map((v, i) => (
                         <td key={i} style={td({
                           color: v === 0 ? 'var(--dim)' : v < 0 ? 'var(--err)' : undefined,
-                          fontWeight: i === r.values.length - 1 ? 600 : 400,
+                          fontWeight: i === analysisIdx ? 600 : 400,
                         })}>{MONEY(v)}</td>
                       ))}
                       <td style={td({ fontWeight: 600, position: 'sticky', right: 130, zIndex: 1, background: rowBg })}>{MONEY(r.total)}</td>

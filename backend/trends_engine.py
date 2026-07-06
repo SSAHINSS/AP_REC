@@ -459,9 +459,10 @@ def analyze(gl_path, entity=None, view="vendor", include_sales=False, period=Non
     """
     entity : entity prefix (e.g. "LIB") or None for whole org
     view   : "vendor" (rows = vendor) or "account" (rows = GL account)
-    period : "YYYY-MM" analysis month — trailing 12 months END at this month.
-             Defaults to the latest month in the data. Lets the user analyze
-             the last CLOSED month when the export includes a partial month.
+    period : "YYYY-MM" analysis month. Window shown = 12 months before it,
+             the month itself (emphasized, drives all flags), plus 1 month
+             after it as a spillover check. Defaults to the prior month
+             through the 10th of the month, then the current month.
     """
     df = load_gl(gl_path)
 
@@ -492,8 +493,11 @@ def analyze(gl_path, entity=None, view="vendor", include_sales=False, period=Non
         _target = pd.Period(_today, freq="M") - (1 if _today.day <= 10 else 0)
         _cands = [m for m in all_months if m <= _target]
         end = _cands[-1] if _cands else all_months[-1]
-    # Analysis month PLUS the 12 months before it (June '26 -> back to June '25)
-    months = [m for m in all_months if m <= end][-13:]
+    # FIXED window: the 12 months before the analysis month, the analysis month
+    # itself, and ONE month after it (spillover check — catches bills posted
+    # into the next period by mistake). June '26 -> June '25 ... July '26.
+    # Months with no GL data appear as empty columns rather than being dropped.
+    months = list(pd.period_range(end - 12, end + 1, freq="M"))
     df = df[df["Period"].isin(months)]
     if df.empty:
         return {"months": [], "entities": entities, "available_months": available_months,
@@ -516,8 +520,8 @@ def analyze(gl_path, entity=None, view="vendor", include_sales=False, period=Non
         if pivot.empty:
             continue
 
-        # Last doc number in current month per row label (for "show your work")
-        cur = months[-1]
+        # Last doc number in the ANALYSIS month per row label (for "show your work")
+        cur = months[-2]
         last_docs = (gdf[gdf["Period"] == cur]
                      .sort_values("Posting date")
                      .groupby(row_key)["Document number"].last().to_dict())
@@ -526,7 +530,9 @@ def analyze(gl_path, entity=None, view="vendor", include_sales=False, period=Non
         for label, r in pivot.iterrows():
             vals = [round(float(v), 2) for v in r.tolist()]
             row = {"label": str(label), "values": vals, "total": round(float(sum(vals)), 2)}
-            f = _flag_row(vals, month_labels)
+            # Flag stats use prior 12 + analysis month; the spillover (+1) column
+            # is display-only and never enters the statistics.
+            f = _flag_row(vals[:-1], month_labels[:-1])
             if f:
                 f["last_doc"] = last_docs.get(label, "")
                 row["flag"] = f

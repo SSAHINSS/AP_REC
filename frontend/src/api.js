@@ -70,6 +70,12 @@ export function deleteUser(id)         { return authedJson(`/users/${id}`, { met
 // ── Stored GL ──
 export function glStatus()             { return authedJson('/gl/status') }
 
+export async function healthCheck() {
+  const res = await fetch(`${BASE}/health`)
+  if (!res.ok) throw new Error('health check failed')
+  return res.json()
+}
+
 export async function uploadGl(glFile) {
   const form = new FormData()
   form.append('gl_file', glFile)
