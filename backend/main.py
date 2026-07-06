@@ -10,7 +10,6 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from reconciliation_engine import run_reconciliation
 from rename_engine import propose_renames, build_zip
 from trends_engine import analyze as analyze_trends
-from flag_engine import analyze_flags
 
 app = FastAPI(title="AP Reconciliation API")
 app.add_middleware(
@@ -149,28 +148,6 @@ async def trends_analyze(
             f.write(await gl_file.read())
             tmp = f.name
         return analyze_trends(tmp, entity=entity or None, view=view, period=period or None)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
-    finally:
-        if tmp and os.path.exists(tmp):
-            os.unlink(tmp)
-
-# ── Reconciliation Flags — trailing-12 anomaly detection on GL alone ────────
-@app.post("/flags/analyze")
-async def flags_analyze(
-    gl_file: UploadFile = File(...),
-    entity: str = Form(""),
-    period: str = Form(""),
-    _: bool = Depends(require_auth),
-):
-    tmp = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
-            f.write(await gl_file.read())
-            tmp = f.name
-        return analyze_flags(tmp, entity=entity or None, period=period or None)
     except HTTPException:
         raise
     except Exception as e:

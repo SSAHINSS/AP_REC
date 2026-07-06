@@ -1,19 +1,23 @@
-ANALYZE PAGE — INSTALL (no file editing needed)
-===============================================
-Adds a 4th page, "Analyze": upload the Sage Intacct GL CSV and it flags
-missing bills, spikes, trailing-off vendors, and duplicate invoices across
-the trailing 12 months. GL only — no Bill.com yet.
+FIX: remove the duplicate "Analyze" page + add animated TRENDS logo
+===================================================================
 
-1. Extract this zip into the AP_REC repo folder:
-   C:\Users\SannySahin\OneDrive - Caspers Company\Documents\GitHub\AP_REC
+STEP 1 — DELETE these two files from your repo (File Explorer):
+  C:\...\AP_REC\backend\flag_engine.py
+  C:\...\AP_REC\frontend\src\pages\AnalyzePage.jsx
 
-2. Windows: merge folders -> YES; replace files -> REPLACE ALL.
-   New files : backend\flag_engine.py, frontend\src\pages\AnalyzePage.jsx
-   Replaced  : backend\main.py, frontend\src\api.js,
-               frontend\src\App.jsx, frontend\src\components\Sidebar.jsx
+STEP 2 — Extract this zip into:
+  C:\Users\SannySahin\OneDrive - Caspers Company\Documents\GitHub\AP_REC
+  Merge folders: YES.  Replace files: REPLACE ALL.
 
-3. GitHub Desktop -> commit -> push. Railway (backend) + Netlify (frontend)
-   auto-deploy. If /flags/analyze 404s after deploy, redeploy latest on
-   Railway to clear the Docker cache.
+STEP 3 — GitHub Desktop should show:
+  modified: backend/main.py
+  modified: frontend/src/api.js
+  modified: frontend/src/App.jsx
+  modified: frontend/src/components/Sidebar.jsx
+  new:      frontend/src/components/TrendsLogo.jsx
+  deleted:  backend/flag_engine.py
+  deleted:  frontend/src/pages/AnalyzePage.jsx
+  Commit -> Push. Railway + Netlify auto-deploy.
 
-4. Delete this README before committing (optional).
+Result: sidebar back to 3 pages (AP Rec, File Namer, Trends).
+Trends page opens with the animated TRENDS logo matching the others.

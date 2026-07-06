@@ -86,22 +86,3 @@ export async function analyzeTrends(glFile, entity = '', view = 'vendor', period
   }
   return res.json()
 }
-
-export async function analyzeFlags(glFile, entity = '', period = '') {
-  const form = new FormData()
-  form.append('gl_file', glFile)
-  form.append('entity', entity)
-  form.append('period', period)
-
-  const res = await fetch(`${BASE}/flags/analyze`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${getToken()}` },
-    body: form,
-  })
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
-    throw new Error(err.detail || 'Flag analysis failed')
-  }
-  return res.json()
-}
