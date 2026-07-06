@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { logout, analyzeTrends } from '../api'
+import { analyzeTrends } from '../api'
 import DropZone from '../components/DropZone'
 
 const MONEY = v =>
@@ -47,7 +47,7 @@ const CROSSHAIR_CSS = `
   }
 `
 
-export default function TrendsPage({ onLogout }) {
+export default function TrendsPage() {
   const [glFiles, setGlFiles]   = useState([])
   const [running, setRunning]   = useState(false)
   const [error,   setError]     = useState('')
@@ -93,23 +93,9 @@ export default function TrendsPage({ onLogout }) {
   })
 
   return (
-    <div style={{ minHeight: '100vh', maxWidth: 1760, margin: '0 auto', padding: '48px 24px 80px',
+    <div style={{ minHeight: '100vh', maxWidth: 1760, margin: '0 auto', padding: '24px 24px 80px',
                   display: 'flex', flexDirection: 'column', gap: 24 }}>
       <style>{CROSSHAIR_CSS}</style>
-
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <h1 style={{ fontSize: 20 }}>Expense Trends</h1>
-          <p style={{ color: 'var(--muted)', fontSize: 12, fontFamily: 'var(--mono)' }}>
-            vendor × month analysis · validate accuracy · catch missing bills
-          </p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span className="badge">Authenticated</span>
-          <button className="btn btn-icon" onClick={() => { logout(); onLogout() }}>Sign out</button>
-        </div>
-      </div>
 
       {/* Upload */}
       <div className="card">
