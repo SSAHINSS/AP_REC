@@ -4,10 +4,12 @@ import LoginPage from './pages/LoginPage'
 import AppPage from './pages/AppPage'
 import FileNamerPage from './pages/FileNamerPage'
 import TrendsPage from './pages/TrendsPage'
+import PayrollPage from './pages/PayrollPage'
 import Sidebar from './components/Sidebar'
 import AnimatedLogo from './components/AnimatedLogo'
 import FileNamerLogo from './components/FileNamerLogo'
 import TrendsLogo from './components/TrendsLogo'
+import PayrollLogo from './components/PayrollLogo'
 import './index.css'
 
 // Shared sticky header — identical layout on every page
@@ -114,6 +116,32 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
             }}>
               <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)', margin: 0 }}>Expense Trends</p>
               <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 400, color: 'var(--muted)', margin: 0 }}>vendor × month analysis</p>
+            </div>
+          </div>
+        )}
+
+        {/* PAYROLL: static left logo + subtitle */}
+        {page === 'payroll' && (
+          <div
+            onClick={scrollTop}
+            onMouseEnter={() => setLeftHovered(true)}
+            onMouseLeave={() => setLeftHovered(false)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 16,
+              transform: `scale(${leftHovered ? 1.03 : 1})`,
+              cursor: 'pointer',
+              transition: 'transform 0.18s cubic-bezier(0.34,1.56,0.64,1)',
+              userSelect: 'none',
+            }}
+          >
+            <PayrollLogo width={340} quick={true} />
+            <div style={{
+              animation: 'taglinePop 0.3s ease forwards',
+              animationDelay: '0.32s',
+              opacity: 0,
+            }}>
+              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)', margin: 0 }}>Payroll</p>
+              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 400, color: 'var(--muted)', margin: 0 }}>accruals · trends</p>
             </div>
           </div>
         )}
@@ -296,7 +324,9 @@ export default function App() {
             ? <AppPage />
             : page === 'filenamer'
               ? <FileNamerPage />
-              : <TrendsPage />
+              : page === 'payroll'
+                ? <PayrollPage />
+                : <TrendsPage />
           }
         </div>
 

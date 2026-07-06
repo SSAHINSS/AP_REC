@@ -66,11 +66,37 @@ function IconTrends({ active }) {
   )
 }
 
+function IconPayroll({ active }) {
+  const c = active ? '#FF7030' : '#8C7B6A'
+  return (
+    <svg width="28" height="28" viewBox="0 0 28 28" shapeRendering="crispEdges" xmlns="http://www.w3.org/2000/svg">
+      {/* Check / pay stub */}
+      <rect x="2" y="6" width="24" height="2" fill={c}/>
+      <rect x="2" y="8" width="2" height="14" fill={c}/>
+      <rect x="24" y="8" width="2" height="14" fill={c}/>
+      <rect x="2" y="22" width="24" height="2" fill={c}/>
+      {/* Dollar sign */}
+      <rect x="8" y="10" width="6" height="2" fill={active ? '#86EFAC' : '#8C7B6A'}/>
+      <rect x="6" y="12" width="2" height="2" fill={active ? '#86EFAC' : '#8C7B6A'}/>
+      <rect x="8" y="14" width="6" height="2" fill={active ? '#86EFAC' : '#8C7B6A'}/>
+      <rect x="14" y="16" width="2" height="2" fill={active ? '#86EFAC' : '#8C7B6A'}/>
+      <rect x="8" y="18" width="6" height="2" fill={active ? '#86EFAC' : '#8C7B6A'}/>
+      <rect x="10" y="8" width="2" height="2" fill={active ? '#86EFAC' : '#8C7B6A'}/>
+      <rect x="10" y="20" width="2" height="2" fill={active ? '#86EFAC' : '#8C7B6A'}/>
+      {/* Amount lines */}
+      <rect x="18" y="11" width="4" height="2" fill={active ? '#FCD34D' : '#8C7B6A'}/>
+      <rect x="18" y="15" width="4" height="2" fill={active ? '#FCD34D' : '#8C7B6A'}/>
+      <rect x="16" y="19" width="6" height="2" fill={active ? '#FCD34D' : '#8C7B6A'}/>
+    </svg>
+  )
+}
+
 export default function Sidebar({ page, setPage }) {
   const items = [
     { id: 'aprec',     label: 'AP Rec',      Icon: IconAPRec },
     { id: 'filenamer', label: 'File Namer',   Icon: IconFileNamer },
     { id: 'trends',    label: 'Trends',       Icon: IconTrends },
+    { id: 'payroll',   label: 'Payroll',      Icon: IconPayroll },
   ]
 
   return (

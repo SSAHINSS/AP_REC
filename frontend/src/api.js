@@ -120,3 +120,39 @@ export async function analyzeTrends(glFile, entity = '', view = 'vendor', period
   }
   return res.json()
 }
+
+// glFile optional — omit to use your saved GL.
+export async function payrollAccrual(monthEnd, entity = '', overrides = {}) {
+  const form = new FormData()
+  form.append('month_end', monthEnd)
+  form.append('entity', entity)
+  form.append('overrides', JSON.stringify(overrides))
+
+  const res = await fetch(`${BASE}/payroll/accrual`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: form,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(err.detail || 'Payroll accrual failed')
+  }
+  return res.json()
+}
+
+export async function payrollTrends(entity = '', period = '') {
+  const form = new FormData()
+  form.append('entity', entity)
+  form.append('period', period)
+
+  const res = await fetch(`${BASE}/payroll/trends`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: form,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(err.detail || 'Payroll trends failed')
+  }
+  return res.json()
+}

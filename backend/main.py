@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from reconciliation_engine import run_reconciliation
 from rename_engine import propose_renames, build_zip
 from trends_engine import analyze as analyze_trends
+from payroll_engine import accrual as payroll_accrual, trends as payroll_trends
 from db import init_db, get_session, User, store_gl, load_gl, SessionLocal, USING_SQLITE
 
 app = FastAPI(title="AP Reconciliation API")
@@ -291,6 +292,67 @@ async def trends_analyze(
         result["gl_filename"] = filename
         result["gl_uploaded_at"] = uploaded_at.isoformat() if uploaded_at else None
         return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+# ── Payroll — accrual calculator + payroll trends ───────────────────────────
+@app.post("/payroll/accrual")
+async def payroll_accrual_ep(
+    gl_file: UploadFile | None = File(None),
+    month_end: str = Form(...),
+    entity: str = Form(""),
+    overrides: str = Form("{}"),
+    user: User = Depends(require_auth),
+    db: Session = Depends(get_session),
+):
+    if gl_file is not None and gl_file.filename:
+        csv_bytes = await gl_file.read()
+        store_gl(db, user.id, gl_file.filename, csv_bytes)
+    else:
+        stored = load_gl(db, user.id)
+        if not stored:
+            raise HTTPException(status_code=422, detail="No GL on file — upload one first")
+        _fn, csv_bytes, _up = stored
+    try:
+        ov = json.loads(overrides or "{}")
+    except Exception:
+        ov = {}
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
+            f.write(csv_bytes); tmp = f.name
+        return payroll_accrual(tmp, month_end, entity=entity or None, schedule_overrides=ov)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+@app.post("/payroll/trends")
+async def payroll_trends_ep(
+    entity: str = Form(""),
+    period: str = Form(""),
+    user: User = Depends(require_auth),
+    db: Session = Depends(get_session),
+):
+    stored = load_gl(db, user.id)
+    if not stored:
+        raise HTTPException(status_code=422, detail="No GL on file — upload one first")
+    _fn, csv_bytes, _up = stored
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
+            f.write(csv_bytes); tmp = f.name
+        return payroll_trends(tmp, entity=entity or None, period=period or None)
     except HTTPException:
         raise
     except Exception as e:
