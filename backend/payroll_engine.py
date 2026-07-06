@@ -33,7 +33,7 @@ import pandas as pd
 
 from trends_engine import load_gl
 
-ENGINE_VERSION = "payroll-v1.0"
+ENGINE_VERSION = "payroll-v1.2-pyrj-only"
 
 # ── Payroll account categories (from the Caspers chart of accounts) ────────
 # Prefix-based so new sub-accounts are picked up automatically.
@@ -123,8 +123,12 @@ def detect_schedules(df):
 
 def _daily_rates(df, entity, month_end: date, schedule: str):
     """
-    Per-category daily cost for one entity, from actual pay-run (PYRJ) postings
-    in the lookback window. Returns {category: {rate, basis_total, runs, source}}.
+    Per-category daily cost for one entity — computed from PYRJ (payroll
+    journal) postings ONLY. PYRJ is the ground truth: it never reverses.
+    GJ/IJ adjusting entries, accruals, reversals, and transfers are excluded
+    by construction. Entities with no PYRJ activity return no rates (the
+    caller surfaces an explicit warning instead of a polluted estimate).
+    Returns {category: {rate, basis_total, runs, days_covered, source}}.
     """
     pay = _payroll_frame(df)
     pay = pay[(pay["Entity"] == entity)
@@ -132,30 +136,21 @@ def _daily_rates(df, entity, month_end: date, schedule: str):
               & (pay["Posting date"] > pd.Timestamp(month_end) - pd.Timedelta(days=RATE_LOOKBACK_DAYS))]
     cycle = CYCLE_DAYS.get(schedule, 14)
 
-    rates = {}
     pyrj = pay[pay["Journal"] == "PYRJ"] if "Journal" in pay.columns else pay.iloc[0:0]
+    rates = {}
     for cat in [c for c, _ in CATEGORY_RULES]:
         src = pyrj[pyrj["Category"] == cat]
-        source = "PYRJ pay runs"
-        if src.empty or src["Amount"].sum() <= 0:
-            # fallback: all activity in category, excluding accrual/reversal churn
-            src = pay[pay["Category"] == cat]
-            desc = src.get("Journal entry line description")
-            if desc is not None:
-                src = src[~desc.fillna("").str.lower().str.contains("accru|revers")]
-            source = "all activity (no PYRJ rows)"
         if src.empty:
             continue
         runs = src["Posting date"].dt.date.nunique()
         total = float(src["Amount"].sum())
         if total <= 0 or runs == 0:
             continue
-        days_covered = max(runs, 1) * cycle if source == "PYRJ pay runs" else RATE_LOOKBACK_DAYS
-        # PYRJ: each distinct posting date ≈ one pay run covering one cycle
-        rate = total / days_covered
-        rates[cat] = {"rate": round(rate, 2), "basis_total": round(total, 2),
+        days_covered = max(runs, 1) * cycle  # each PYRJ posting date ≈ one pay run
+        rates[cat] = {"rate": round(total / days_covered, 2),
+                      "basis_total": round(total, 2),
                       "runs": int(runs), "days_covered": int(days_covered),
-                      "source": source}
+                      "source": "PYRJ pay runs"}
     return rates
 
 
@@ -170,6 +165,7 @@ def accrual(gl_path, month_end: str, entity=None, schedule_overrides=None):
     E = pd.Timestamp(month_end).date()
     overrides = schedule_overrides or {}
 
+    existing = detect_existing_accruals(gl_path, E)
     schedules = detect_schedules(df)
     entities = sorted(schedules.keys())
     targets = [entity.upper()] if entity else entities
@@ -182,7 +178,8 @@ def accrual(gl_path, month_end: str, entity=None, schedule_overrides=None):
             rows.append({"entity": ent, "schedule": "unknown",
                          "schedule_basis": det["basis"], "days": None,
                          "categories": [], "total": 0.0,
-                         "note": "Schedule unknown — select one to calculate"})
+                         "note": "Schedule unknown — select one to calculate",
+                         "existing_accruals": existing.get(ent)})
             continue
         days = unaccrued_days(sched, E)
         p_end = _last_expensed_period_end(sched, E)
@@ -197,11 +194,17 @@ def accrual(gl_path, month_end: str, entity=None, schedule_overrides=None):
                          "rate_basis_total": r["basis_total"], "rate_runs": r["runs"],
                          "rate_days_covered": r["days_covered"]})
         cats.sort(key=lambda c: -c["accrual"])
+        no_pyrj_note = (None if cats else
+                        "No PYRJ (payroll journal) postings for this entity — rate "
+                        "cannot be computed from ground-truth pay runs. Accrue manually "
+                        "or check how this entity posts payroll.")
         rows.append({"entity": ent, "schedule": sched,
+                     "note": no_pyrj_note,
                      "schedule_basis": det["basis"],
                      "expensed_through": p_end.isoformat(),
                      "days": days, "categories": cats,
-                     "total": round(total, 2)})
+                     "total": round(total, 2),
+                     "existing_accruals": existing.get(ent)})
 
     rows.sort(key=lambda r: -(r["total"] or 0))
     grand = round(sum(r["total"] for r in rows), 2)
@@ -277,3 +280,133 @@ def trends(gl_path, entity=None, period=None):
             "entities": entities, "entity": entity.upper() if entity else None,
             "rows": rows, "totals": totals,
             "ytd_months": len(ytd_months), "ly_ytd_months": len(ly_ytd)}
+
+
+# ── Existing-accrual detection (warn-only; never changes the math) ─────────
+# The accrued-payroll liability accounts in the Caspers chart. Credits within
+# the analysis month = an accrual being booked; debits = a reversal landing.
+LIAB_ACCOUNTS = {
+    "35600": "Accrued Wages",
+    "35700": "Accrued Taxes",
+    "30201": "Accrued 401k Match",
+    "30205": "Accrued Workers Comp",
+    "30206": "Accrued Health Insurance",
+}
+
+
+def _classify_accrual(desc: str, acct: str, day: int, last_day: int) -> str:
+    """Classify a liability posting so payroll-days accruals stand out from
+    standing bonus/401k/property-tax accruals that share the same accounts."""
+    d = (desc or "").lower()
+    if "bonus" in d:
+        return "bonus"
+    if "401k" in d or acct == "30201":
+        return "401k match"
+    if any(k in d for k in ("property", "re tax", "tpp", "real estate")):
+        return "property tax"
+    if acct == "30205":
+        return "workers comp"
+    if acct == "30206":
+        return "health insurance"
+    if any(k in d for k in ("payroll", "labor", "wage", "paychex")):
+        return "payroll"
+    # Blank-description month-end postings to wages/taxes are payroll accruals
+    # in practice (e.g. RRT/CRP post these without descriptions).
+    if (not d or d == "nan") and day >= last_day - 3 and acct in ("35600", "35700"):
+        return "payroll"
+    return "other"
+
+
+def detect_existing_accruals(gl_path, month_end: date):
+    """
+    Scan the RAW GL (liability accounts are filtered out of the analysis frame)
+    for accruals already booked in the analysis month. Returns per-entity:
+      {entity: {"payroll": [rows...], "other": [rows...],
+                "payroll_total": x, "other_total": y}}
+    Row = {account, account_title, date, desc, doc, amount, kind}.
+    """
+    raw = pd.read_csv(gl_path, low_memory=False)
+    raw["Account no"] = raw["Account no"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+    raw = raw[raw["Account no"].isin(LIAB_ACCOUNTS)]
+    if raw.empty:
+        return {}
+    raw["Posting date"] = pd.to_datetime(raw["Posting date"], errors="coerce")
+    raw = raw[raw["Posting date"].dt.strftime("%Y-%m") == month_end.strftime("%Y-%m")]
+    raw = raw[raw["Amount"] < 0]          # credits = accruals being booked
+    if raw.empty:
+        return {}
+    raw["Entity"] = (raw["Location ID"].fillna("").astype(str)
+                     .str.split("-").str[0].str.upper())
+    out = {}
+    for _, r in raw.iterrows():
+        acct = r["Account no"]
+        desc = str(r.get("Journal entry line description") or "")
+        kind = _classify_accrual(desc, acct, int(r["Posting date"].day), month_end.day)
+        row = {
+            "account": acct,
+            "account_title": LIAB_ACCOUNTS[acct],
+            "date": r["Posting date"].strftime("%Y-%m-%d"),
+            "desc": "" if desc.lower() == "nan" else desc[:80],
+            "doc": str(r.get("Document number") or "")[:40],
+            "amount": round(float(-r["Amount"]), 2),   # show as positive accrual $
+            "kind": kind,
+        }
+        ent = out.setdefault(r["Entity"], {"payroll": [], "other": [],
+                                           "payroll_total": 0.0, "other_total": 0.0})
+        bucket = "payroll" if kind == "payroll" else "other"
+        ent[bucket].append(row)
+        ent[bucket + "_total"] = round(ent[bucket + "_total"] + row["amount"], 2)
+    return out
+
+
+# ── Drill-down: the rows behind any number ──────────────────────────────────
+def _rows_payload(frame, cap=300):
+    frame = frame.sort_values("Posting date")
+    total = round(float(frame["Amount"].sum()), 2)
+    rows = []
+    for _, r in frame.head(cap).iterrows():
+        rows.append({
+            "date": r["Posting date"].strftime("%Y-%m-%d"),
+            "journal": str(r.get("Journal") or ""),
+            "account": str(r.get("Account no") or ""),
+            "title": str(r.get("Account title") or "")[:40],
+            "desc": str(r.get("Journal entry line description") or "")[:80].replace("nan", ""),
+            "doc": str(r.get("Document number") or "")[:40],
+            "amount": round(float(r["Amount"]), 2),
+        })
+    return {"rows": rows, "row_count": int(len(frame)), "total": total,
+            "truncated": bool(len(frame) > cap)}
+
+
+def rate_detail(gl_path, entity, month_end: str, category: str, schedule: str):
+    """The exact postings that built (and were excluded from) a daily rate."""
+    df = load_gl(gl_path)
+    E = pd.Timestamp(month_end).date()
+    pay = _payroll_frame(df)
+    win = pay[(pay["Entity"] == entity.upper())
+              & (pay["Category"] == category)
+              & (pay["Posting date"] <= pd.Timestamp(E))
+              & (pay["Posting date"] > pd.Timestamp(E) - pd.Timedelta(days=RATE_LOOKBACK_DAYS))]
+
+    # PYRJ ONLY — the payroll journal is the single source of truth for rates.
+    included = win[win["Journal"] == "PYRJ"]
+    excluded = win[win["Journal"] != "PYRJ"]
+    source = "PYRJ pay runs" if not included.empty else "none — no PYRJ postings in window"
+    excl_reason = "not a PYRJ pay-run posting (GJ/IJ adjusting entries, accruals, reversals, transfers)"
+    return {
+        "entity": entity.upper(), "category": category, "month_end": str(E),
+        "window_days": RATE_LOOKBACK_DAYS, "source": source,
+        "included": _rows_payload(included),
+        "excluded": {**_rows_payload(excluded), "reason": excl_reason},
+    }
+
+
+def cell_detail(gl_path, category: str, month: str, entity=None):
+    """Every GL line behind one Payroll Trends cell (category x month)."""
+    df = load_gl(gl_path)
+    pay = _payroll_frame(df)
+    if entity:
+        pay = pay[pay["Entity"] == entity.upper()]
+    frame = pay[(pay["Category"] == category) & (pay["Period"] == pd.Period(month, freq="M"))]
+    return {"entity": entity.upper() if entity else None, "category": category,
+            "month": month, **_rows_payload(frame, cap=500)}

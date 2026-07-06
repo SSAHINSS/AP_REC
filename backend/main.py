@@ -17,7 +17,8 @@ from sqlalchemy.orm import Session
 from reconciliation_engine import run_reconciliation
 from rename_engine import propose_renames, build_zip
 from trends_engine import analyze as analyze_trends
-from payroll_engine import accrual as payroll_accrual, trends as payroll_trends
+from payroll_engine import (accrual as payroll_accrual, trends as payroll_trends,
+                            rate_detail as payroll_rate_detail, cell_detail as payroll_cell_detail)
 from db import init_db, get_session, User, store_gl, load_gl, SessionLocal, USING_SQLITE
 
 app = FastAPI(title="AP Reconciliation API")
@@ -389,6 +390,44 @@ async def payroll_trends_ep(
     finally:
         if tmp and os.path.exists(tmp):
             os.unlink(tmp)
+
+
+@app.post("/payroll/detail")
+async def payroll_detail_ep(
+    kind: str = Form(...),           # "rate" | "cell"
+    entity: str = Form(""),
+    category: str = Form(...),
+    month_end: str = Form(""),        # rate mode
+    schedule: str = Form("cohort1"),  # rate mode
+    month: str = Form(""),            # cell mode ("YYYY-MM")
+    user: User = Depends(require_auth),
+    db: Session = Depends(get_session),
+):
+    stored = load_gl(db, user.id)
+    if not stored:
+        raise HTTPException(status_code=422, detail="No GL on file — upload one first")
+    _fn, csv_bytes, _up = stored
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
+            f.write(csv_bytes); tmp = f.name
+        if kind == "rate":
+            if not (entity and month_end):
+                raise HTTPException(status_code=422, detail="rate detail needs entity + month_end")
+            return payroll_rate_detail(tmp, entity, month_end, category, schedule)
+        elif kind == "cell":
+            if not month:
+                raise HTTPException(status_code=422, detail="cell detail needs month")
+            return payroll_cell_detail(tmp, category, month, entity=entity or None)
+        raise HTTPException(status_code=422, detail="kind must be 'rate' or 'cell'")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
+
 
 if __name__ == "__main__":
     import uvicorn

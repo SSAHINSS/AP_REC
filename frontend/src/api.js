@@ -195,3 +195,19 @@ export async function payrollTrends(entity = '', period = '') {
   }
   return res.json()
 }
+
+export async function payrollDetail(params) {
+  const form = new FormData()
+  for (const [k, v] of Object.entries(params)) form.append(k, v ?? '')
+  const res = await fetch(`${BASE}/payroll/detail`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: form,
+  })
+  checkAuth(res)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(err.detail || 'Detail lookup failed')
+  }
+  return res.json()
+}
