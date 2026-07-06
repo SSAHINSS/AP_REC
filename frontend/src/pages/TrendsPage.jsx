@@ -15,7 +15,7 @@ const FLAG_COLORS = {
 function FlagChip({ flag }) {
   const c = FLAG_COLORS[flag.flag] || {}
   return (
-    <span title={`avg $${flag.history_mean.toLocaleString()} | σ $${flag.history_sd.toLocaleString()} | ${flag.months_present}/${flag.months_history} months | current $${flag.current.toLocaleString()}${flag.last_doc ? ` | last doc ${flag.last_doc}` : ''}`}
+    <span title={`${flag.group ? flag.group + ' | ' : ''}avg $${(flag.history_mean ?? 0).toLocaleString()} | σ $${(flag.history_sd ?? 0).toLocaleString()} | ${flag.months_present}/${flag.months_history} months | current $${(flag.current ?? 0).toLocaleString()}${flag.last_doc ? ` | last doc ${flag.last_doc}` : ''}`}
       style={{
         fontFamily: 'var(--mono)', fontSize: 10, whiteSpace: 'nowrap',
         color: c.fg, background: c.bg, border: `1px solid ${c.bd}`,
@@ -46,25 +46,28 @@ const CROSSHAIR_CSS = `
   }
 `
 
+const ALL = '__ALL__'
+
 export default function TrendsPage() {
-  const [stored,  setStored]    = useState(null)   // {filename, uploaded_at} if a GL is saved
-  const [noGl,    setNoGl]      = useState(false)  // backend says nothing is uploaded yet
+  const [stored,  setStored]    = useState(null)
+  const [noGl,    setNoGl]      = useState(false)
   const [running, setRunning]   = useState(false)
   const [error,   setError]     = useState('')
   const [data,    setData]      = useState(null)
   const [entity,  setEntity]    = useState('')      // '' = whole org
   const [view,    setView]      = useState('vendor')
-  const [period,  setPeriod]    = useState('')      // '' = latest month in data
-  const [openGroups, setOpenGroups] = useState({})  // group name -> bool
+  const [period,  setPeriod]    = useState('')      // '' = smart default (backend)
+  const [group,   setGroup]     = useState(ALL)     // GL group dropdown
   const [queueOpen, setQueueOpen] = useState(true)
   const [showFlagsOnly, setShowFlagsOnly] = useState(false)
+  const [sort,    setSort]      = useState({ key: null, dir: 'desc' })  // key: 'label' | 'total' | month index
 
   async function run(nextEntity = entity, nextView = view, nextPeriod = period) {
     setRunning(true); setError(''); setNoGl(false)
     try {
       const res = await analyzeTrends(null, nextEntity, nextView, nextPeriod)
       setData(res)
-      setOpenGroups({})
+      setSort({ key: null, dir: 'desc' })
       if (res.gl_filename) setStored({ filename: res.gl_filename, uploaded_at: res.gl_uploaded_at })
     } catch (e) {
       if ((e.message || '').includes('No GL')) setNoGl(true)
@@ -77,24 +80,78 @@ export default function TrendsPage() {
   // On page load, analyze the saved GL immediately (backend 422s if none).
   useEffect(() => { run() }, [])
 
-  function pick(nextEntity) {
-    setEntity(nextEntity)
-    run(nextEntity, view, period)
-  }
-  function pickView(v) {
-    setView(v)
-    run(entity, v, period)
-  }
-  function pickPeriod(p) {
-    setPeriod(p)
-    run(entity, view, p)
-  }
+  function pick(nextEntity)  { setEntity(nextEntity); run(nextEntity, view, period) }
+  function pickView(v)       { setView(v);            run(entity, v, period) }
+  function pickPeriod(p)     { setPeriod(p);          run(entity, view, p) }
 
   const months = data?.months || []
   const shortMonths = months.map(m => {
     const [y, mo] = m.split('-')
     return `${['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo]} '${y.slice(2)}`
   })
+
+  // ── Build the single table's rows for the selected group (or ALL merged) ──
+  function buildRows() {
+    if (!data) return []
+    if (group !== ALL) {
+      const g = data.groups.find(g => g.name === group)
+      return g ? g.rows.map(r => ({ ...r })) : []
+    }
+    // ALL: merge every group's rows by label (a vendor can span groups)
+    const flagsByLabel = {}
+    for (const f of data.flags) {
+      if (!flagsByLabel[f.label] || f.severity > flagsByLabel[f.label].severity)
+        flagsByLabel[f.label] = f
+    }
+    const merged = new Map()
+    for (const g of data.groups) {
+      for (const r of g.rows) {
+        const m = merged.get(r.label)
+        if (m) {
+          m.values = m.values.map((v, i) => Math.round((v + r.values[i]) * 100) / 100)
+          m.total = Math.round((m.total + r.total) * 100) / 100
+        } else {
+          merged.set(r.label, { label: r.label, values: [...r.values], total: r.total })
+        }
+      }
+    }
+    const rows = [...merged.values()]
+    for (const r of rows) {
+      const f = flagsByLabel[r.label]
+      if (f) r.flag = f
+    }
+    return rows
+  }
+
+  function sortedRows() {
+    let rows = buildRows()
+    if (showFlagsOnly) rows = rows.filter(r => r.flag)
+    if (sort.key === null) {
+      rows.sort((a, b) => Math.abs(b.total) - Math.abs(a.total))
+    } else if (sort.key === 'label') {
+      rows.sort((a, b) => sort.dir === 'asc'
+        ? a.label.localeCompare(b.label)
+        : b.label.localeCompare(a.label))
+    } else {
+      const val = r => sort.key === 'total' ? r.total : (r.values[sort.key] || 0)
+      rows.sort((a, b) => sort.dir === 'asc' ? val(a) - val(b) : val(b) - val(a))
+    }
+    return rows
+  }
+
+  // Click a header: first click sorts desc (high→low), second flips asc.
+  function clickSort(key) {
+    setSort(s => s.key === key
+      ? { key, dir: s.dir === 'desc' ? 'asc' : 'desc' }
+      : { key, dir: key === 'label' ? 'asc' : 'desc' })
+  }
+  const arrow = key => sort.key === key ? (sort.dir === 'desc' ? ' ▼' : ' ▲') : ''
+
+  const rows = data ? sortedRows() : []
+  const colTotals = months.map((_, i) =>
+    Math.round(rows.reduce((s, r) => s + (r.values[i] || 0), 0) * 100) / 100)
+  const grandTotal = Math.round(rows.reduce((s, r) => s + r.total, 0) * 100) / 100
+  const flaggedCount = rows.filter(r => r.flag).length
 
   return (
     <div style={{ minHeight: '100vh', maxWidth: 1760, margin: '0 auto', padding: '24px 24px 80px',
@@ -108,37 +165,41 @@ export default function TrendsPage() {
         </div>
       )}
       {error && <div className="card" style={{ color: 'var(--err)', fontFamily: 'var(--mono)', fontSize: 12 }}>{error}</div>}
+      {running && !data && (
+        <div className="card" style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Analyzing…</div>
+      )}
 
       {data && !data.error && (
         <>
-          {/* Entity + view selectors */}
+          {/* Entity + view + month + group selectors */}
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)',
-                             textTransform: 'uppercase', letterSpacing: '0.1em', marginRight: 6 }}>Entity</span>
-              <button onClick={() => pick('')}
-                style={pill(entity === '')}>ALL (ORG)</button>
+              <span style={lbl}>Entity</span>
+              <button onClick={() => pick('')} style={pill(entity === '')}>ALL (ORG)</button>
               {data.entities.map(e => (
                 <button key={e} onClick={() => pick(e)} style={pill(entity === e)}>{e}</button>
               ))}
             </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)',
-                             textTransform: 'uppercase', letterSpacing: '0.1em', marginRight: 6 }}>View</span>
+              <span style={lbl}>View</span>
               <button onClick={() => pickView('vendor')}  style={pill(view === 'vendor')}>By Vendor</button>
               <button onClick={() => pickView('account')} style={pill(view === 'account')}>By GL Account</button>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)',
-                             textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 6px 0 18px' }}>
-                Analysis Month
-              </span>
-              <select value={data.period || ''} onChange={e => pickPeriod(e.target.value)}
-                style={{ fontFamily: 'var(--mono)', fontSize: 11, padding: '4px 8px',
-                         background: 'var(--surface)', color: 'var(--text)',
-                         border: '1px solid var(--border)', borderRadius: 2 }}>
+
+              <span style={{ ...lbl, margin: '0 6px 0 18px' }}>Analysis Month</span>
+              <select value={data.period || ''} onChange={e => pickPeriod(e.target.value)} style={sel}>
                 {(data.available_months || []).slice().reverse().map(m => (
                   <option key={m} value={m}>{m}</option>
                 ))}
               </select>
+
+              <span style={{ ...lbl, margin: '0 6px 0 18px' }}>GL Group</span>
+              <select value={group} onChange={e => setGroup(e.target.value)} style={sel}>
+                <option value={ALL}>ALL GROUPS</option>
+                {data.groups.map(g => (
+                  <option key={g.name} value={g.name}>{g.name}</option>
+                ))}
+              </select>
+
               <span style={{ flex: 1 }} />
               <label style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)',
                               display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
@@ -149,7 +210,7 @@ export default function TrendsPage() {
             </div>
           </div>
 
-          {/* Flags summary — the automated "Summary" tab, worst first */}
+          {/* Review Queue — worst first, across all groups */}
           {data.flags.length > 0 && (
             <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
               <button onClick={() => setQueueOpen(q => !q)}
@@ -183,80 +244,77 @@ export default function TrendsPage() {
             </div>
           )}
 
-          {/* Group matrices — P&L order */}
-          {data.groups.map(g => {
-            const open = openGroups[g.name] ?? false
-            const rows = showFlagsOnly ? g.rows.filter(r => r.flag) : g.rows
-            if (showFlagsOnly && !rows.length) return null
-            return (
-              <div key={g.name} className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                <button onClick={() => setOpenGroups(o => ({ ...o, [g.name]: !open }))}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                           background: 'transparent', border: 'none', cursor: 'pointer',
-                           padding: '14px 16px', color: 'var(--text)' }}>
-                  <span style={{ fontFamily: 'var(--mono)', color: 'var(--ox)', fontSize: 12 }}>{open ? '▾' : '▸'}</span>
-                  <span style={{ fontWeight: 600, fontSize: 14 }}>{g.name}</span>
-                  <span style={{ flex: 1 }} />
-                  {g.rows.some(r => r.flag) &&
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--warn)' }}>
-                      {g.rows.filter(r => r.flag).length} flagged
-                    </span>}
-                  <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>
-                    ${MONEY(g.total)}
-                  </span>
-                </button>
-
-                {open && (
-                  <div className="trend-wrap" style={{ overflowX: 'auto', overflowY: 'hidden', borderTop: '1px solid var(--border)' }}>
-                    <table className="trend-table" style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}>
-                      <thead>
-                        <tr>
-                          <th style={th({ textAlign: 'left', minWidth: 220, position: 'sticky', left: 0, zIndex: 2, background: 'var(--surface)' })}>
-                            {view === 'vendor' ? 'VENDOR' : 'ACCOUNT'}
-                          </th>
-                          {shortMonths.map((m, i) => (
-                            <th key={m} style={th({ color: i === shortMonths.length - 1 ? 'var(--ox)' : 'var(--muted)' })}>{m}</th>
-                          ))}
-                          <th style={th({ position: 'sticky', right: 130, zIndex: 2, background: 'var(--surface)' })}>TOTAL</th>
-                          <th style={th({ textAlign: 'left', position: 'sticky', right: 0, zIndex: 2, background: 'var(--surface)', width: 130, minWidth: 130 })}>FLAG</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((r, ri) => {
-                          const rowBg = ri % 2 ? 'var(--bg)' : 'var(--surface)'
-                          return (
-                          <tr key={r.label} style={{ background: ri % 2 ? 'transparent' : 'var(--stripe)' }}>
-                            <td style={td({ textAlign: 'left', position: 'sticky', left: 0, zIndex: 1,
-                                            background: rowBg,
-                                            maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })}>
-                              {r.label}
-                            </td>
-                            {r.values.map((v, i) => (
-                              <td key={i} style={td({
-                                color: v === 0 ? 'var(--dim)' : v < 0 ? 'var(--err)' : undefined,
-                                fontWeight: i === r.values.length - 1 ? 600 : 400,
-                              })}>{MONEY(v)}</td>
-                            ))}
-                            <td style={td({ fontWeight: 600, position: 'sticky', right: 130, zIndex: 1, background: rowBg })}>{MONEY(r.total)}</td>
-                            <td style={td({ textAlign: 'left', position: 'sticky', right: 0, zIndex: 1, background: rowBg, width: 130, minWidth: 130 })}>{r.flag ? <FlagChip flag={r.flag} /> : ''}</td>
-                          </tr>
-                          )
-                        })}
-                        <tr style={{ borderTop: '1px solid var(--border)' }}>
-                          <td style={td({ textAlign: 'left', fontWeight: 700, position: 'sticky', left: 0, zIndex: 1, background: 'var(--surface)' })}>TOTAL</td>
-                          {g.totals.map((v, i) => (
-                            <td key={i} style={td({ fontWeight: 700 })}>{MONEY(v)}</td>
-                          ))}
-                          <td style={td({ fontWeight: 700, position: 'sticky', right: 130, zIndex: 1, background: 'var(--surface)' })}>{MONEY(g.total)}</td>
-                          <td style={td({ position: 'sticky', right: 0, zIndex: 1, background: 'var(--surface)', width: 130, minWidth: 130 })}></td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+          {/* THE table — one table, group-filtered, click-sortable headers */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>
+                {group === ALL ? 'All Groups' : group}
+              </span>
+              <span style={{ flex: 1 }} />
+              {flaggedCount > 0 &&
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--warn)' }}>
+                  {flaggedCount} flagged
+                </span>}
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>
+                ${MONEY(grandTotal)}
+              </span>
+            </div>
+            <div className="trend-wrap" style={{ overflowX: 'auto', overflowY: 'hidden', borderTop: '1px solid var(--border)' }}>
+              <table className="trend-table" style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}>
+                <thead>
+                  <tr>
+                    <th onClick={() => clickSort('label')}
+                        style={th({ textAlign: 'left', minWidth: 220, position: 'sticky', left: 0, zIndex: 2,
+                                    background: 'var(--surface)', cursor: 'pointer' })}>
+                      {view === 'vendor' ? 'VENDOR' : 'ACCOUNT'}{arrow('label')}
+                    </th>
+                    {shortMonths.map((m, i) => (
+                      <th key={m} onClick={() => clickSort(i)}
+                          style={th({ cursor: 'pointer',
+                                      color: i === shortMonths.length - 1 ? 'var(--ox)' : 'var(--muted)' })}>
+                        {m}{arrow(i)}
+                      </th>
+                    ))}
+                    <th onClick={() => clickSort('total')}
+                        style={th({ position: 'sticky', right: 130, zIndex: 2, background: 'var(--surface)', cursor: 'pointer' })}>
+                      TOTAL{arrow('total')}
+                    </th>
+                    <th style={th({ textAlign: 'left', position: 'sticky', right: 0, zIndex: 2, background: 'var(--surface)', width: 130, minWidth: 130 })}>FLAG</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, ri) => {
+                    const rowBg = ri % 2 ? 'var(--bg)' : 'var(--surface)'
+                    return (
+                    <tr key={r.label} style={{ background: ri % 2 ? 'transparent' : 'var(--stripe)' }}>
+                      <td style={td({ textAlign: 'left', position: 'sticky', left: 0, zIndex: 1,
+                                      background: rowBg,
+                                      maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })}>
+                        {r.label}
+                      </td>
+                      {r.values.map((v, i) => (
+                        <td key={i} style={td({
+                          color: v === 0 ? 'var(--dim)' : v < 0 ? 'var(--err)' : undefined,
+                          fontWeight: i === r.values.length - 1 ? 600 : 400,
+                        })}>{MONEY(v)}</td>
+                      ))}
+                      <td style={td({ fontWeight: 600, position: 'sticky', right: 130, zIndex: 1, background: rowBg })}>{MONEY(r.total)}</td>
+                      <td style={td({ textAlign: 'left', position: 'sticky', right: 0, zIndex: 1, background: rowBg, width: 130, minWidth: 130 })}>{r.flag ? <FlagChip flag={r.flag} /> : ''}</td>
+                    </tr>
+                    )
+                  })}
+                  <tr style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={td({ textAlign: 'left', fontWeight: 700, position: 'sticky', left: 0, zIndex: 1, background: 'var(--surface)' })}>TOTAL</td>
+                    {colTotals.map((v, i) => (
+                      <td key={i} style={td({ fontWeight: 700 })}>{MONEY(v)}</td>
+                    ))}
+                    <td style={td({ fontWeight: 700, position: 'sticky', right: 130, zIndex: 1, background: 'var(--surface)' })}>{MONEY(grandTotal)}</td>
+                    <td style={td({ position: 'sticky', right: 0, zIndex: 1, background: 'var(--surface)', width: 130, minWidth: 130 })}></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </>
       )}
 
@@ -265,6 +323,11 @@ export default function TrendsPage() {
   )
 }
 
+const lbl = { fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)',
+              textTransform: 'uppercase', letterSpacing: '0.1em', marginRight: 6 }
+const sel = { fontFamily: 'var(--mono)', fontSize: 11, padding: '4px 8px',
+              background: 'var(--surface)', color: 'var(--text)',
+              border: '1px solid var(--border)', borderRadius: 2 }
 const pill = active => ({
   fontFamily: 'var(--mono)', fontSize: 11, cursor: 'pointer',
   padding: '4px 10px', borderRadius: 2,
@@ -272,13 +335,12 @@ const pill = active => ({
   background: active ? 'rgba(255,112,48,0.1)' : 'transparent',
   border: active ? '1px solid var(--ox-b)' : '1px solid var(--border)',
 })
-
 const th = extra => ({
   padding: '8px 8px', textAlign: 'right', fontWeight: 600, fontSize: 10,
   letterSpacing: '0.06em', color: 'var(--muted)',
-  borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', ...extra,
+  borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap',
+  userSelect: 'none', ...extra,
 })
-
 const td = extra => ({
   padding: '5px 8px', textAlign: 'right', whiteSpace: 'nowrap', ...extra,
 })

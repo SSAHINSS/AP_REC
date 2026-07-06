@@ -484,8 +484,16 @@ def analyze(gl_path, entity=None, view="vendor", include_sales=False, period=Non
         if end not in all_months:
             end = all_months[-1]
     else:
-        end = all_months[-1]
-    months = [m for m in all_months if m <= end][-12:]
+        # Default analysis month: during the first 10 days of a month you are
+        # closing LAST month, so default to the prior period; from the 11th on,
+        # default to the current month. Clamped to months present in the data.
+        from datetime import date as _date
+        _today = _date.today()
+        _target = pd.Period(_today, freq="M") - (1 if _today.day <= 10 else 0)
+        _cands = [m for m in all_months if m <= _target]
+        end = _cands[-1] if _cands else all_months[-1]
+    # Analysis month PLUS the 12 months before it (June '26 -> back to June '25)
+    months = [m for m in all_months if m <= end][-13:]
     df = df[df["Period"].isin(months)]
     if df.empty:
         return {"months": [], "entities": entities, "available_months": available_months,
