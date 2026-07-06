@@ -4,6 +4,18 @@ function getToken() {
   return localStorage.getItem('ap_token')
 }
 
+// A 401 means the sign-in token is stale or expired (e.g. after an auth
+// upgrade). Clear it and send the person back to the login screen instead
+// of failing with a dead "Unauthorized".
+function checkAuth(res) {
+  if (res.status === 401) {
+    logout()
+    window.location.reload()
+    throw new Error('Session expired — please sign in again')
+  }
+  return res
+}
+
 export async function login(email, password) {
   const res = await fetch(`${BASE}/auth`, {
     method: 'POST',
@@ -40,6 +52,7 @@ async function authedJson(path, opts = {}) {
       ...(opts.body && typeof opts.body === 'string' ? { 'Content-Type': 'application/json' } : {}),
     },
   })
+  checkAuth(res)
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Request failed' }))
     throw new Error(err.detail || 'Request failed')
@@ -65,6 +78,7 @@ export async function uploadGl(glFile) {
     headers: { Authorization: `Bearer ${getToken()}` },
     body: form,
   })
+  checkAuth(res)
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Upload failed' }))
     throw new Error(err.detail || 'Upload failed')
@@ -83,6 +97,7 @@ export async function reconcile(glFile, statementFiles, onLog) {
     body: form,
   })
 
+  checkAuth(res)
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
     throw new Error(err.detail || 'Reconciliation failed')
@@ -129,6 +144,7 @@ export async function analyzeTrends(glFile, entity = '', view = 'vendor', period
     body: form,
   })
 
+  checkAuth(res)
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
     throw new Error(err.detail || 'Trends analysis failed')
@@ -148,6 +164,7 @@ export async function payrollAccrual(monthEnd, entity = '', overrides = {}) {
     headers: { Authorization: `Bearer ${getToken()}` },
     body: form,
   })
+  checkAuth(res)
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
     throw new Error(err.detail || 'Payroll accrual failed')
@@ -165,6 +182,7 @@ export async function payrollTrends(entity = '', period = '') {
     headers: { Authorization: `Bearer ${getToken()}` },
     body: form,
   })
+  checkAuth(res)
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
     throw new Error(err.detail || 'Payroll trends failed')
