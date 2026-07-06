@@ -108,7 +108,7 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
               userSelect: 'none',
             }}
           >
-            <TrendsLogo width={300} quick={true} />
+            <TrendsLogo width={363} quick={true} />
             <div style={{
               animation: 'taglinePop 0.3s ease forwards',
               animationDelay: '0.32s',
@@ -134,7 +134,7 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
               userSelect: 'none',
             }}
           >
-            <PayrollLogo width={340} quick={true} />
+            <PayrollLogo width={422} quick={true} />
             <div style={{
               animation: 'taglinePop 0.3s ease forwards',
               animationDelay: '0.32s',

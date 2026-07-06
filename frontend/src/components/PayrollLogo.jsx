@@ -145,7 +145,7 @@ export default function PayrollLogo({ width = '100%', quick = false }) {
       <svg
         ref={svgRef}
         width={width}
-        viewBox="0 0 896 142"
+        viewBox="0 0 896 158"
         xmlns="http://www.w3.org/2000/svg"
         shapeRendering="crispEdges"
       >

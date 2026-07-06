@@ -142,7 +142,7 @@ export default function TrendsLogo({ width = '100%', quick = false }) {
       <svg
         ref={svgRef}
         width={width}
-        viewBox="0 0 770 142"
+        viewBox="0 0 770 158"
         xmlns="http://www.w3.org/2000/svg"
         shapeRendering="crispEdges"
       >
