@@ -18,6 +18,24 @@
   --shadow:  drop-shadow(3px 4px 5px rgba(10,1,0,0.65));
 }
 
+
+/* ── Light theme: warm off-white. Activated via <html data-theme="light"> ── */
+:root[data-theme="light"] {
+  --bg:      #F6F2EB;
+  --surface: #FDFBF7;
+  --hi:      #EFE9DF;
+  --border:  rgba(60,45,30,0.13);
+  --dim:     rgba(60,45,30,0.22);
+  --text:    #2C251C;
+  --muted:   #8B7D6B;
+  --ox:      #E85B1A;
+  --ox-d:    #D14A10;
+  --ox-dk:   #B03A08;
+  --ox-b:    rgba(232,91,26,0.42);
+  --ox-glow: rgba(232,91,26,0.10);
+  --shadow:  drop-shadow(2px 3px 4px rgba(80,55,30,0.18));
+}
+
 html, body, #root {
   height: 100%;
   background: var(--bg);

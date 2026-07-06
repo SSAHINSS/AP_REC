@@ -3,6 +3,7 @@ import { login } from '../api'
 import AnimatedLogo from '../components/AnimatedLogo'
 
 export default function LoginPage({ onLogin }) {
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [show, setShow] = useState(false)
   const [error, setError] = useState('')
@@ -13,10 +14,10 @@ export default function LoginPage({ onLogin }) {
     setError('')
     setLoading(true)
     try {
-      await login(password)
+      await login(email, password)
       onLogin()
     } catch {
-      setError('Incorrect password')
+      setError('Wrong email or password')
     } finally {
       setLoading(false)
     }
@@ -52,11 +53,19 @@ export default function LoginPage({ onLogin }) {
       <form onSubmit={handleSubmit} style={{ width: '100%', maxWidth: 360 }}>
         <div className="input-wrap" style={{ marginBottom: 12 }}>
           <input
+            type="email"
+            placeholder="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <div className="input-wrap" style={{ marginBottom: 12 }}>
+          <input
             type={show ? 'text' : 'password'}
             placeholder="enter password"
             value={password}
             onChange={e => setPassword(e.target.value)}
-            autoFocus
           />
           <button type="button" onClick={() => setShow(s => !s)}>
             {show ? '🙈' : '👁'}

@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { analyzeTrends } from '../api'
+import { useState, useEffect } from 'react'
+import { analyzeTrends, glStatus } from '../api'
 import DropZone from '../components/DropZone'
 
 const MONEY = v =>
@@ -49,6 +49,8 @@ const CROSSHAIR_CSS = `
 
 export default function TrendsPage() {
   const [glFiles, setGlFiles]   = useState([])
+  const [stored,  setStored]    = useState(null)   // {filename, uploaded_at} if a GL is saved
+  const [checked, setChecked]   = useState(false)  // finished checking for stored GL
   const [running, setRunning]   = useState(false)
   const [error,   setError]     = useState('')
   const [data,    setData]      = useState(null)
@@ -59,19 +61,36 @@ export default function TrendsPage() {
   const [queueOpen, setQueueOpen] = useState(true)
   const [showFlagsOnly, setShowFlagsOnly] = useState(false)
 
-  async function run(nextEntity = entity, nextView = view, nextPeriod = period) {
-    if (!glFiles[0]) return
+  async function run(nextEntity = entity, nextView = view, nextPeriod = period, fileOverride) {
+    const file = fileOverride !== undefined ? fileOverride : (glFiles[0] || null)
+    if (!file && !stored) return
     setRunning(true); setError('')
     try {
-      const res = await analyzeTrends(glFiles[0], nextEntity, nextView, nextPeriod)
+      const res = await analyzeTrends(file, nextEntity, nextView, nextPeriod)
       setData(res)
       setOpenGroups({})
+      if (res.gl_filename) setStored({ filename: res.gl_filename, uploaded_at: res.gl_uploaded_at })
+      if (file) setGlFiles([])   // once stored, no need to keep re-sending it
     } catch (e) {
       setError(e.message)
     } finally {
       setRunning(false)
     }
   }
+
+  // On page load: if a GL is already saved for this user, analyze it immediately.
+  useEffect(() => {
+    let alive = true
+    glStatus().then(s => {
+      if (!alive) return
+      setChecked(true)
+      if (s.has_gl) {
+        setStored({ filename: s.filename, uploaded_at: s.uploaded_at })
+        run(entity, view, period, null)
+      }
+    }).catch(() => setChecked(true))
+    return () => { alive = false }
+  }, [])
 
   function pick(nextEntity) {
     setEntity(nextEntity)
@@ -103,10 +122,18 @@ export default function TrendsPage() {
                       letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>
           Sage Intacct GL Detail (CSV)
         </div>
-        <DropZone label="Drop GL CSV here" accept={['csv']} files={glFiles} onChange={setGlFiles} />
-        <button className="btn btn-primary" disabled={!glFiles.length || running}
+        {stored && (
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
+            Saved GL on file: <b style={{ color: 'var(--text)' }}>{stored.filename}</b>
+            {stored.uploaded_at ? ` · uploaded ${new Date(stored.uploaded_at).toLocaleString()}` : ''}
+            {' '}— drop a new file below to replace it.
+          </div>
+        )}
+        <DropZone label={stored ? 'Drop a NEW GL CSV to replace the saved one' : 'Drop GL CSV here'}
+                  accept={['csv']} files={glFiles} onChange={setGlFiles} />
+        <button className="btn btn-primary" disabled={(!glFiles.length && !stored) || running}
                 onClick={() => run()} style={{ marginTop: 12 }}>
-          {running ? 'Analyzing…' : 'Analyze →'}
+          {running ? 'Analyzing…' : glFiles.length ? 'Upload & Analyze →' : 'Analyze →'}
         </button>
         {error && <div style={{ color: '#F87171', fontFamily: 'var(--mono)', fontSize: 12, marginTop: 10 }}>{error}</div>}
       </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { isLoggedIn, logout } from './api'
+import { isLoggedIn, logout, isAdmin, listUsers, createUser, deleteUser } from './api'
 import LoginPage from './pages/LoginPage'
 import AppPage from './pages/AppPage'
 import FileNamerPage from './pages/FileNamerPage'
@@ -11,7 +11,7 @@ import TrendsLogo from './components/TrendsLogo'
 import './index.css'
 
 // Shared sticky header — identical layout on every page
-function SharedHeader({ page, onLogout }) {
+function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
   const [scrollY,     setScrollY]     = useState(0)
   const [leftHovered, setLeftHovered] = useState(false)
   const [centHovered, setCentHovered] = useState(false)
@@ -151,6 +151,23 @@ function SharedHeader({ page, onLogout }) {
         flexShrink: 0,
         opacity: Math.max(0.25, 1 - p * 0.85),
       }}>
+        <button
+          className="btn btn-icon"
+          title="Toggle light / dark theme"
+          onClick={onToggleTheme}
+          style={{ padding: '2px 10px', fontSize: 10 }}
+        >
+          {theme === 'light' ? 'Dark' : 'Light'}
+        </button>
+        {isAdmin() && (
+          <button
+            className="btn btn-icon"
+            onClick={onOpenUsers}
+            style={{ padding: '2px 10px', fontSize: 10 }}
+          >
+            Users
+          </button>
+        )}
         <span className="badge">Authenticated</span>
         <button
           className="btn btn-icon"
@@ -165,10 +182,89 @@ function SharedHeader({ page, onLogout }) {
   )
 }
 
+function UsersModal({ onClose }) {
+  const [users, setUsers] = useState([])
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [makeAdmin, setMakeAdmin] = useState(false)
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const refresh = () => listUsers().then(setUsers).catch(e => setErr(e.message))
+  useEffect(() => { refresh() }, [])
+
+  async function add() {
+    setErr(''); setBusy(true)
+    try {
+      await createUser(email.trim(), password, makeAdmin)
+      setEmail(''); setPassword(''); setMakeAdmin(false)
+      refresh()
+    } catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
+  async function remove(id) {
+    setErr('')
+    try { await deleteUser(id); refresh() } catch (e) { setErr(e.message) }
+  }
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 300,
+      background: 'rgba(0,0,0,0.55)', display: 'flex',
+      alignItems: 'center', justifyContent: 'center', padding: 24,
+    }}>
+      <div onClick={e => e.stopPropagation()} className="card"
+           style={{ width: '100%', maxWidth: 460, background: 'var(--surface)',
+                    border: '1px solid var(--border)', borderRadius: 6, padding: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ox)',
+                         letterSpacing: '0.1em', textTransform: 'uppercase' }}>Users</span>
+          <span style={{ flex: 1 }} />
+          <button className="btn btn-icon" onClick={onClose} style={{ padding: '2px 10px', fontSize: 10 }}>Close</button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+          {users.map(u => (
+            <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8,
+                                     fontFamily: 'var(--mono)', fontSize: 12 }}>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</span>
+              {u.is_admin && <span style={{ fontSize: 9, color: 'var(--ox)' }}>ADMIN</span>}
+              <button className="btn btn-icon" onClick={() => remove(u.id)}
+                      style={{ padding: '1px 8px', fontSize: 10 }}>remove</button>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14,
+                      display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="input-wrap"><input type="email" placeholder="new user email"
+               value={email} onChange={e => setEmail(e.target.value)} /></div>
+          <div className="input-wrap"><input type="text" placeholder="temporary password (6+ chars)"
+               value={password} onChange={e => setPassword(e.target.value)} /></div>
+          <label style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)',
+                          display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
+            <input type="checkbox" checked={makeAdmin} onChange={e => setMakeAdmin(e.target.checked)} />
+            admin (can manage users)
+          </label>
+          <button className="btn btn-primary" disabled={busy || !email || password.length < 6}
+                  onClick={add}>Add user</button>
+          {err && <div style={{ color: '#F87171', fontFamily: 'var(--mono)', fontSize: 11 }}>{err}</div>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [authed,  setAuthed]  = useState(isLoggedIn)
   const [page,    setPage]    = useState(() => localStorage.getItem('ap_page') || 'aprec')
   const [visible, setVisible] = useState(true)
+  const [theme,   setTheme]   = useState(() => localStorage.getItem('ap_theme') || 'dark')
+  const [usersOpen, setUsersOpen] = useState(false)
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('ap_theme', theme)
+  }, [theme])
 
   function switchPage(newPage) {
     if (newPage === page) return
@@ -183,7 +279,11 @@ export default function App() {
       <Sidebar page={page} setPage={switchPage} />
       <div style={{ marginLeft: 64, flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
 
-        <SharedHeader page={page} onLogout={() => setAuthed(false)} />
+        <SharedHeader page={page} onLogout={() => setAuthed(false)}
+                      theme={theme}
+                      onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
+                      onOpenUsers={() => setUsersOpen(true)} />
+        {usersOpen && <UsersModal onClose={() => setUsersOpen(false)} />}
 
         {/* Page content with fade transition */}
         <div style={{
