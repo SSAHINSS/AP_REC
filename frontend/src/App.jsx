@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { isLoggedIn, logout, isAdmin, listUsers, createUser, deleteUser } from './api'
 import LoginPage from './pages/LoginPage'
+import HomePage from './pages/HomePage'
 import AppPage from './pages/AppPage'
 import FileNamerPage from './pages/FileNamerPage'
 import TrendsPage from './pages/TrendsPage'
@@ -9,6 +10,7 @@ import Sidebar from './components/Sidebar'
 import AnimatedLogo from './components/AnimatedLogo'
 import FileNamerLogo from './components/FileNamerLogo'
 import TrendsLogo from './components/TrendsLogo'
+import HomeLogo from './components/HomeLogo'
 import PayrollLogo from './components/PayrollLogo'
 import './index.css'
 
@@ -36,7 +38,7 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
     <div style={{
       position: 'sticky', top: 0, zIndex: 100,
       background: 'var(--bg)',
-      borderBottom: page === 'filenamer' ? 'none' : `1px solid rgba(255,255,255,${p * 0.08})`,
+      borderBottom: page === 'filenamer' ? 'none' : `1px solid color-mix(in srgb, var(--text) ${Math.round(p * 8)}%, transparent)`,
       padding: '12px 24px',
       height: 84,
       display: 'flex',
@@ -45,6 +47,32 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
 
       {/* Logo area — same bounding box always */}
       <div style={{ flex: 1, position: 'relative', height: 60, display: 'flex', alignItems: 'center' }}>
+
+        {/* HOME: static left logo + subtitle */}
+        {page === 'home' && (
+          <div
+            onClick={scrollTop}
+            onMouseEnter={() => setLeftHovered(true)}
+            onMouseLeave={() => setLeftHovered(false)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 16,
+              transform: `scale(${leftHovered ? 1.03 : 1})`,
+              cursor: 'pointer',
+              transition: 'transform 0.18s cubic-bezier(0.34,1.56,0.64,1)',
+              userSelect: 'none',
+            }}
+          >
+            <HomeLogo width={244} quick={true} />
+            <div style={{
+              animation: 'taglinePop 0.3s ease forwards',
+              animationDelay: '0.32s',
+              opacity: 0,
+            }}>
+              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)', margin: 0 }}>AP Rec Site</p>
+              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 400, color: 'var(--muted)', margin: 0 }}>upload once · analyze everywhere</p>
+            </div>
+          </div>
+        )}
 
         {/* AP-REC: left logo (fades out on scroll) */}
         {page === 'aprec' && (
@@ -275,7 +303,7 @@ function UsersModal({ onClose }) {
           </label>
           <button className="btn btn-primary" disabled={busy || !email || password.length < 6}
                   onClick={add}>Add user</button>
-          {err && <div style={{ color: '#F87171', fontFamily: 'var(--mono)', fontSize: 11 }}>{err}</div>}
+          {err && <div style={{ color: 'var(--err)', fontFamily: 'var(--mono)', fontSize: 11 }}>{err}</div>}
         </div>
       </div>
     </div>
@@ -284,7 +312,7 @@ function UsersModal({ onClose }) {
 
 export default function App() {
   const [authed,  setAuthed]  = useState(isLoggedIn)
-  const [page,    setPage]    = useState(() => localStorage.getItem('ap_page') || 'aprec')
+  const [page,    setPage]    = useState(() => localStorage.getItem('ap_page') || 'home')
   const [visible, setVisible] = useState(true)
   const [theme,   setTheme]   = useState(() => localStorage.getItem('ap_theme') || 'dark')
   const [usersOpen, setUsersOpen] = useState(false)
@@ -320,13 +348,15 @@ export default function App() {
           transform: visible ? 'translateY(0)' : 'translateY(6px)',
           transition: 'opacity 0.22s ease, transform 0.22s ease',
         }}>
-          {page === 'aprec'
-            ? <AppPage />
-            : page === 'filenamer'
-              ? <FileNamerPage />
-              : page === 'payroll'
-                ? <PayrollPage />
-                : <TrendsPage />
+          {page === 'home'
+            ? <HomePage go={switchPage} />
+            : page === 'aprec'
+              ? <AppPage />
+              : page === 'filenamer'
+                ? <FileNamerPage />
+                : page === 'payroll'
+                  ? <PayrollPage />
+                  : <TrendsPage />
           }
         </div>
 

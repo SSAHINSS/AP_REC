@@ -66,7 +66,7 @@ export default function PayrollPage() {
   if (noGl) return (
     <div style={{ maxWidth: 1760, margin: '0 auto', padding: '24px' }}>
       <div className="card" style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>
-        No GL on file yet. Upload your Sage Intacct GL on the <b>Trends</b> page first —
+        No GL on file yet. Upload your Sage Intacct GL on the <b style={{ color: 'var(--ox)' }}>Home</b> page first —
         Payroll uses the same saved GL.
       </div>
     </div>
@@ -92,7 +92,7 @@ export default function PayrollPage() {
               {months.slice().reverse().map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             {running && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>calculating…</span>}
-            {error && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: '#F87171' }}>{error}</span>}
+            {error && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--err)' }}>{error}</span>}
           </div>
         </div>
       )}
@@ -126,7 +126,7 @@ export default function PayrollPage() {
                     expensed through {r.expensed_through} → <b style={{ color: 'var(--text)' }}>{r.days} days to accrue</b>
                   </span>
                 )}
-                {r.note && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: '#FCD34D' }}>{r.note}</span>}
+                {r.note && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--warn)' }}>{r.note}</span>}
                 <span style={{ flex: 1 }} />
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 700 }}>${MONEY(r.total)}</span>
               </div>
@@ -178,7 +178,7 @@ export default function PayrollPage() {
               </tr></thead>
               <tbody>
                 {trendData.rows.map((r, ri) => (
-                  <tr key={r.category} style={{ background: ri % 2 ? 'transparent' : 'rgba(127,127,127,0.04)' }}>
+                  <tr key={r.category} style={{ background: ri % 2 ? 'transparent' : 'var(--stripe)' }}>
                     <td style={td({ textAlign: 'left', position: 'sticky', left: 0, zIndex: 1,
                                     background: ri % 2 ? 'var(--bg)' : 'var(--surface)' })}>{r.category}</td>
                     {r.values.map((v, i) => (
@@ -187,7 +187,7 @@ export default function PayrollPage() {
                     ))}
                     <td style={td({ fontWeight: 600 })}>{MONEY(r.ytd_avg)}</td>
                     <td style={td({ color: 'var(--muted)' })}>{r.ly_ytd_avg ? MONEY(r.ly_ytd_avg) : '—'}</td>
-                    <td style={td({ color: r.delta_pct == null ? 'var(--muted)' : r.delta_pct > 0 ? '#FCD34D' : '#86EFAC' })}>
+                    <td style={td({ color: r.delta_pct == null ? 'var(--muted)' : r.delta_pct > 0 ? 'var(--warn)' : 'var(--ok)' })}>
                       {r.delta_pct == null ? '—' : `${r.delta_pct > 0 ? '+' : ''}${r.delta_pct}%`}
                     </td>
                   </tr>

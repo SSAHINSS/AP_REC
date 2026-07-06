@@ -370,6 +370,11 @@ GROUP_MAP.update({
 })
 
 # Income / non-operating accounts — not expenses, excluded from trends
+GROUP_MAP.update({
+    "55118": "Other Sales",   # Recreation Revenue (new in full GL)
+    "55600": "Other Sales",   # Mgmt Company Fees revenue (new in full GL)
+})
+
 NON_EXPENSE_ACCOUNTS = {
     "78100",  # Interest Income
     "79003",  # Other Income

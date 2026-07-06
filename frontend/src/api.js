@@ -57,6 +57,21 @@ export function deleteUser(id)         { return authedJson(`/users/${id}`, { met
 // ── Stored GL ──
 export function glStatus()             { return authedJson('/gl/status') }
 
+export async function uploadGl(glFile) {
+  const form = new FormData()
+  form.append('gl_file', glFile)
+  const res = await fetch(`${BASE}/gl/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: form,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Upload failed' }))
+    throw new Error(err.detail || 'Upload failed')
+  }
+  return res.json()
+}
+
 export async function reconcile(glFile, statementFiles, onLog) {
   const form = new FormData()
   form.append('gl_file', glFile)

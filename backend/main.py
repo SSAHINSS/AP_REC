@@ -249,6 +249,35 @@ async def rename_download(
 # GL persistence: uploading a file STORES it for the user (replacing any
 # previous one). Calling without a file re-uses the stored GL, so you can
 # leave and come back tomorrow without re-uploading.
+@app.post("/gl/upload")
+async def gl_upload(
+    gl_file: UploadFile = File(...),
+    user: User = Depends(require_auth),
+    db: Session = Depends(get_session),
+):
+    csv_bytes = await gl_file.read()
+    store_gl(db, user.id, gl_file.filename, csv_bytes)
+    # quick summary for the Home page
+    try:
+        import io as _io
+        import pandas as _pd
+        _df = _pd.read_csv(_io.BytesIO(csv_bytes), usecols=["Posting date", "Location ID"],
+                           low_memory=False)
+        _d = _pd.to_datetime(_df["Posting date"], errors="coerce").dropna()
+        _ents = (_df["Location ID"].fillna("").astype(str)
+                 .str.split("-").str[0].str.upper())
+        summary = {
+            "rows": int(len(_df)),
+            "first_month": _d.min().strftime("%Y-%m") if len(_d) else None,
+            "last_month": _d.max().strftime("%Y-%m") if len(_d) else None,
+            "entities": int(_ents[_ents != ""].nunique()),
+        }
+    except Exception:
+        summary = {"rows": None, "first_month": None, "last_month": None, "entities": None}
+    return {"stored": True, "filename": gl_file.filename,
+            "uploaded_at": datetime.now(timezone.utc).isoformat(), **summary}
+
+
 @app.get("/gl/status")
 def gl_status(user: User = Depends(require_auth), db: Session = Depends(get_session)):
     stored = load_gl(db, user.id)

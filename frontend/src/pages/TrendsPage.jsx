@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { analyzeTrends, glStatus } from '../api'
-import DropZone from '../components/DropZone'
 
 const MONEY = v =>
   v === 0 || v == null ? '—'
@@ -8,9 +7,9 @@ const MONEY = v =>
   : v.toLocaleString(undefined, { maximumFractionDigits: 0 })
 
 const FLAG_COLORS = {
-  'Possibly Missing': { fg: '#F87171', bg: 'rgba(248,113,113,0.10)', bd: 'rgba(248,113,113,0.35)' },
-  'Possibly High':    { fg: '#FCD34D', bg: 'rgba(252,211,77,0.10)',  bd: 'rgba(252,211,77,0.35)'  },
-  'Possibly Low':     { fg: '#FCA5A5', bg: 'rgba(252,165,165,0.08)', bd: 'rgba(252,165,165,0.30)' },
+  'Possibly Missing': { fg: 'var(--err)',  bg: 'color-mix(in srgb, var(--err) 10%, transparent)',  bd: 'color-mix(in srgb, var(--err) 35%, transparent)'  },
+  'Possibly High':    { fg: 'var(--warn)', bg: 'color-mix(in srgb, var(--warn) 10%, transparent)', bd: 'color-mix(in srgb, var(--warn) 35%, transparent)' },
+  'Possibly Low':     { fg: 'var(--err)',  bg: 'color-mix(in srgb, var(--err) 7%, transparent)',   bd: 'color-mix(in srgb, var(--err) 28%, transparent)'  },
 }
 
 function FlagChip({ flag }) {
@@ -48,7 +47,6 @@ const CROSSHAIR_CSS = `
 `
 
 export default function TrendsPage() {
-  const [glFiles, setGlFiles]   = useState([])
   const [stored,  setStored]    = useState(null)   // {filename, uploaded_at} if a GL is saved
   const [checked, setChecked]   = useState(false)  // finished checking for stored GL
   const [running, setRunning]   = useState(false)
@@ -62,7 +60,7 @@ export default function TrendsPage() {
   const [showFlagsOnly, setShowFlagsOnly] = useState(false)
 
   async function run(nextEntity = entity, nextView = view, nextPeriod = period, fileOverride) {
-    const file = fileOverride !== undefined ? fileOverride : (glFiles[0] || null)
+    const file = fileOverride !== undefined ? fileOverride : null
     if (!file && !stored) return
     setRunning(true); setError('')
     try {
@@ -70,7 +68,6 @@ export default function TrendsPage() {
       setData(res)
       setOpenGroups({})
       if (res.gl_filename) setStored({ filename: res.gl_filename, uploaded_at: res.gl_uploaded_at })
-      if (file) setGlFiles([])   // once stored, no need to keep re-sending it
     } catch (e) {
       setError(e.message)
     } finally {
@@ -116,27 +113,13 @@ export default function TrendsPage() {
                   display: 'flex', flexDirection: 'column', gap: 24 }}>
       <style>{CROSSHAIR_CSS}</style>
 
-      {/* Upload */}
-      <div className="card">
-        <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ox)',
-                      letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>
-          Sage Intacct GL Detail (CSV)
+      {checked && !stored && !data && (
+        <div className="card" style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>
+          No GL on file yet. Upload it on the <b style={{ color: 'var(--ox)' }}>Home</b> page —
+          every module reads the same saved GL.
         </div>
-        {stored && (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
-            Saved GL on file: <b style={{ color: 'var(--text)' }}>{stored.filename}</b>
-            {stored.uploaded_at ? ` · uploaded ${new Date(stored.uploaded_at).toLocaleString()}` : ''}
-            {' '}— drop a new file below to replace it.
-          </div>
-        )}
-        <DropZone label={stored ? 'Drop a NEW GL CSV to replace the saved one' : 'Drop GL CSV here'}
-                  accept={['csv']} files={glFiles} onChange={setGlFiles} />
-        <button className="btn btn-primary" disabled={(!glFiles.length && !stored) || running}
-                onClick={() => run()} style={{ marginTop: 12 }}>
-          {running ? 'Analyzing…' : glFiles.length ? 'Upload & Analyze →' : 'Analyze →'}
-        </button>
-        {error && <div style={{ color: '#F87171', fontFamily: 'var(--mono)', fontSize: 12, marginTop: 10 }}>{error}</div>}
-      </div>
+      )}
+      {error && <div className="card" style={{ color: 'var(--err)', fontFamily: 'var(--mono)', fontSize: 12 }}>{error}</div>}
 
       {data && !data.error && (
         <>
@@ -197,7 +180,7 @@ export default function TrendsPage() {
                 {data.flags.map((f, i) => (
                   <div key={i} style={{ display: 'grid', gridTemplateColumns: '130px 160px 1fr 110px 110px 90px',
                                         gap: 8, alignItems: 'center', padding: '5px 8px',
-                                        background: i % 2 ? 'transparent' : 'rgba(255,255,255,0.02)',
+                                        background: i % 2 ? 'transparent' : 'var(--stripe)',
                                         fontFamily: 'var(--mono)', fontSize: 11 }}>
                     <FlagChip flag={f} />
                     <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.group}</span>
@@ -227,7 +210,7 @@ export default function TrendsPage() {
                   <span style={{ fontWeight: 600, fontSize: 14 }}>{g.name}</span>
                   <span style={{ flex: 1 }} />
                   {g.rows.some(r => r.flag) &&
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: '#FCD34D' }}>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--warn)' }}>
                       {g.rows.filter(r => r.flag).length} flagged
                     </span>}
                   <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>
@@ -254,7 +237,7 @@ export default function TrendsPage() {
                         {rows.map((r, ri) => {
                           const rowBg = ri % 2 ? 'var(--bg)' : 'var(--surface)'
                           return (
-                          <tr key={r.label} style={{ background: ri % 2 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
+                          <tr key={r.label} style={{ background: ri % 2 ? 'transparent' : 'var(--stripe)' }}>
                             <td style={td({ textAlign: 'left', position: 'sticky', left: 0, zIndex: 1,
                                             background: rowBg,
                                             maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })}>
@@ -262,7 +245,7 @@ export default function TrendsPage() {
                             </td>
                             {r.values.map((v, i) => (
                               <td key={i} style={td({
-                                color: v === 0 ? 'var(--border)' : v < 0 ? '#F87171' : undefined,
+                                color: v === 0 ? 'var(--dim)' : v < 0 ? 'var(--err)' : undefined,
                                 fontWeight: i === r.values.length - 1 ? 600 : 400,
                               })}>{MONEY(v)}</td>
                             ))}
@@ -289,7 +272,7 @@ export default function TrendsPage() {
         </>
       )}
 
-      {data?.error && <div style={{ color: '#F87171', fontFamily: 'var(--mono)', fontSize: 12 }}>{data.error}</div>}
+      {data?.error && <div style={{ color: 'var(--err)', fontFamily: 'var(--mono)', fontSize: 12 }}>{data.error}</div>}
     </div>
   )
 }

@@ -1,4 +1,26 @@
 // Pixel art icons as inline SVG
+function IconHome({ active }) {
+  const c = active ? '#FF7030' : '#8C7B6A'
+  return (
+    <svg width="28" height="28" viewBox="0 0 28 28" shapeRendering="crispEdges" xmlns="http://www.w3.org/2000/svg">
+      {/* Roof */}
+      <rect x="12" y="3" width="4" height="2" fill={c}/>
+      <rect x="10" y="5" width="4" height="2" fill={c}/>
+      <rect x="14" y="5" width="4" height="2" fill={c}/>
+      <rect x="8" y="7" width="4" height="2" fill={c}/>
+      <rect x="16" y="7" width="4" height="2" fill={c}/>
+      <rect x="6" y="9" width="4" height="2" fill={c}/>
+      <rect x="18" y="9" width="4" height="2" fill={c}/>
+      {/* Walls */}
+      <rect x="6" y="11" width="2" height="12" fill={c}/>
+      <rect x="20" y="11" width="2" height="12" fill={c}/>
+      <rect x="6" y="23" width="16" height="2" fill={c}/>
+      {/* Door */}
+      <rect x="12" y="16" width="4" height="7" fill={active ? '#FCD34D' : '#8C7B6A'}/>
+    </svg>
+  )
+}
+
 function IconAPRec({ active }) {
   const c = active ? '#FF7030' : '#8C7B6A'
   return (
@@ -93,6 +115,7 @@ function IconPayroll({ active }) {
 
 export default function Sidebar({ page, setPage }) {
   const items = [
+    { id: 'home',      label: 'Home',        Icon: IconHome },
     { id: 'aprec',     label: 'AP Rec',      Icon: IconAPRec },
     { id: 'filenamer', label: 'File Namer',   Icon: IconFileNamer },
     { id: 'trends',    label: 'Trends',       Icon: IconTrends },
