@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage'
 import AppPage from './pages/AppPage'
 import FileNamerPage from './pages/FileNamerPage'
 import TrendsPage from './pages/TrendsPage'
+import AnalyzePage from './pages/AnalyzePage'
 import Sidebar from './components/Sidebar'
 import AnimatedLogo from './components/AnimatedLogo'
 import FileNamerLogo from './components/FileNamerLogo'
@@ -122,6 +123,37 @@ function SharedHeader({ page, onLogout }) {
           </div>
         )}
 
+        {/* ANALYZE: static text title + subtitle */}
+        {page === 'analyze' && (
+          <div
+            onClick={scrollTop}
+            onMouseEnter={() => setLeftHovered(true)}
+            onMouseLeave={() => setLeftHovered(false)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 16,
+              transform: `scale(${leftHovered ? 1.03 : 1})`,
+              cursor: 'pointer',
+              transition: 'transform 0.18s cubic-bezier(0.34,1.56,0.64,1)',
+              userSelect: 'none',
+            }}
+          >
+            <span style={{
+              fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 26,
+              letterSpacing: '0.08em', color: 'var(--ox)',
+            }}>
+              ANALYZE
+            </span>
+            <div style={{
+              animation: 'taglinePop 0.3s ease forwards',
+              animationDelay: '0.32s',
+              opacity: 0,
+            }}>
+              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)', margin: 0 }}>GL Reconciliation</p>
+              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 400, color: 'var(--muted)', margin: 0 }}>missing bills · variances · duplicates</p>
+            </div>
+          </div>
+        )}
+
         {/* FILE-NMR: static left logo + subtitle */}
         {page === 'filenamer' && (
           <div
@@ -200,7 +232,9 @@ export default function App() {
             ? <AppPage />
             : page === 'filenamer'
               ? <FileNamerPage />
-              : <TrendsPage />
+              : page === 'trends'
+                ? <TrendsPage />
+                : <AnalyzePage />
           }
         </div>
 

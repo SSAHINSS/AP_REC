@@ -1,18 +1,19 @@
-TRENDS PAGE — INSTALL (no file editing needed)
-==============================================
+ANALYZE PAGE — INSTALL (no file editing needed)
+===============================================
+Adds a 4th page, "Analyze": upload the Sage Intacct GL CSV and it flags
+missing bills, spikes, trailing-off vendors, and duplicate invoices across
+the trailing 12 months. GL only — no Bill.com yet.
 
-1. Extract this zip directly into your AP_REC repo folder:
+1. Extract this zip into the AP_REC repo folder:
    C:\Users\SannySahin\OneDrive - Caspers Company\Documents\GitHub\AP_REC
 
-2. When Windows asks about merging folders → YES
-   When it asks about replacing files → REPLACE ALL
-   (main.py, api.js, App.jsx, Sidebar.jsx get replaced;
-    trends_engine.py and TrendsPage.jsx are new)
+2. Windows: merge folders -> YES; replace files -> REPLACE ALL.
+   New files : backend\flag_engine.py, frontend\src\pages\AnalyzePage.jsx
+   Replaced  : backend\main.py, frontend\src\api.js,
+               frontend\src\App.jsx, frontend\src\components\Sidebar.jsx
 
-3. Open GitHub Desktop → review changes → commit → push.
+3. GitHub Desktop -> commit -> push. Railway (backend) + Netlify (frontend)
+   auto-deploy. If /flags/analyze 404s after deploy, redeploy latest on
+   Railway to clear the Docker cache.
 
-4. If the Trends page says "Not Found" after Railway deploys:
-   Railway → AP_REC service → Deployments → ⋯ on latest → Redeploy
-   (clears Docker cache)
-
-5. Delete this README file — it doesn't need to be committed.
+4. Delete this README before committing (optional).

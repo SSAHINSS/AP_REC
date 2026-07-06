@@ -66,11 +66,35 @@ function IconTrends({ active }) {
   )
 }
 
+function IconAnalyze({ active }) {
+  const c = active ? '#FF7030' : '#8C7B6A'
+  return (
+    <svg width="28" height="28" viewBox="0 0 28 28" shapeRendering="crispEdges" xmlns="http://www.w3.org/2000/svg">
+      {/* Ledger */}
+      <rect x="3" y="3" width="14" height="2" fill={c}/>
+      <rect x="3" y="5" width="2" height="18" fill={c}/>
+      <rect x="15" y="5" width="2" height="7" fill={c}/>
+      <rect x="3" y="23" width="14" height="2" fill={c}/>
+      {/* Rows */}
+      <rect x="6" y="8" width="7" height="2" fill={c} opacity="0.5"/>
+      <rect x="6" y="12" width="5" height="2" fill={c} opacity="0.5"/>
+      <rect x="6" y="16" width="6" height="2" fill={active ? '#FCD34D' : '#8C7B6A'}/>
+      {/* Magnifier */}
+      <rect x="17" y="14" width="6" height="2" fill={active ? '#86EFAC' : '#8C7B6A'}/>
+      <rect x="17" y="20" width="6" height="2" fill={active ? '#86EFAC' : '#8C7B6A'}/>
+      <rect x="17" y="16" width="2" height="4" fill={active ? '#86EFAC' : '#8C7B6A'}/>
+      <rect x="23" y="16" width="2" height="4" fill={active ? '#86EFAC' : '#8C7B6A'}/>
+      <rect x="24" y="22" width="2" height="2" fill={active ? '#86EFAC' : '#8C7B6A'}/>
+    </svg>
+  )
+}
+
 export default function Sidebar({ page, setPage }) {
   const items = [
     { id: 'aprec',     label: 'AP Rec',      Icon: IconAPRec },
     { id: 'filenamer', label: 'File Namer',   Icon: IconFileNamer },
     { id: 'trends',    label: 'Trends',       Icon: IconTrends },
+    { id: 'analyze',   label: 'Analyze',      Icon: IconAnalyze },
   ]
 
   return (
