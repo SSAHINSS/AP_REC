@@ -118,7 +118,7 @@ export default function Sidebar({ page, setPage }) {
     { id: 'home',      label: 'Home',        Icon: IconHome },
     { id: 'aprec',     label: 'AP Rec',      Icon: IconAPRec },
     { id: 'filenamer', label: 'File Namer',   Icon: IconFileNamer },
-    { id: 'trends',    label: 'AP Trends',       Icon: IconTrends },
+    { id: 'trends',    label: 'Expense Trends',       Icon: IconTrends },
     { id: 'payroll',   label: 'Payroll',      Icon: IconPayroll },
   ]
 

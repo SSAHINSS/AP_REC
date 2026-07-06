@@ -211,3 +211,45 @@ export async function payrollDetail(params) {
   }
   return res.json()
 }
+
+export async function trendsDetail(params) {
+  const form = new FormData()
+  for (const [k, v] of Object.entries(params)) form.append(k, v ?? '')
+  const res = await fetch(`${BASE}/trends/detail`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: form,
+  })
+  checkAuth(res)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(err.detail || 'Detail lookup failed')
+  }
+  return res.json()
+}
+
+export async function exportTrends(entity = '', view = 'vendor', period = '') {
+  const form = new FormData()
+  form.append('entity', entity)
+  form.append('view', view)
+  form.append('period', period)
+  const res = await fetch(`${BASE}/trends/export`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: form,
+  })
+  checkAuth(res)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Export failed' }))
+    throw new Error(err.detail || 'Export failed')
+  }
+  const dispo = res.headers.get('Content-Disposition') || ''
+  const fname = (dispo.match(/filename=(.+)/) || [])[1] || 'EXPENSE_TRENDS.xlsx'
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fname
+  link.click()
+  URL.revokeObjectURL(url)
+}

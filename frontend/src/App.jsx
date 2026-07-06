@@ -136,14 +136,14 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
               userSelect: 'none',
             }}
           >
-            <TrendsLogo width={507} quick={true} />
+            <TrendsLogo width={804} quick={true} />
             <div style={{
               animation: 'taglinePop 0.3s ease forwards',
               animationDelay: '0.32s',
               opacity: 0,
             }}>
-              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)', margin: 0 }}>AP Trends</p>
-              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 400, color: 'var(--muted)', margin: 0 }}>vendor × month analysis</p>
+              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)', margin: 0 }}>Expense Trends</p>
+              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 400, color: 'var(--muted)', margin: 0 }}>vendors · credit cards · flags</p>
             </div>
           </div>
         )}

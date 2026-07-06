@@ -1,38 +1,41 @@
-PAYROLL v2: PYRJ-ONLY MATH + DRILL-DOWN + ALREADY-ACCRUED WARNINGS
-==================================================================
+EXPENSE TRENDS v2: CREDIT CARDS + DRILL-DOWN + OPS EXCEL REPORT
+===============================================================
 
-THE MATH (your rule, now enforced with zero exceptions):
-  Daily rates are computed from PYRJ (Payroll Journal) postings ONLY.
-  GJ/IJ adjusting entries, accruals, reversals, and transfers can never
-  touch the rate. Entities with no PYRJ activity (RRT, CRP, CSC, HBP)
-  show an explicit "cannot compute" note instead of a polluted estimate.
-
-NEW FEATURES:
-  1. ALREADY-ACCRUED WARNING (warn only - the math never changes):
-     each entity is scanned for payroll accruals already posted in the
-     close month (credits to 35600/35700/30201/30205/30206, classified
-     so standing bonus/401k/property-tax accruals don't false-alarm).
-     A yellow banner shows date, account, amount, description, doc #.
-  2. RATE DRILL-DOWN: click any category row in the calculator to see
-     every PYRJ posting that built the rate, plus an expandable list of
-     everything EXCLUDED and why.
-  3. TRENDS DRILL-DOWN: click any amount in Payroll Trends to see the
-     GL lines behind that cell.
+WHAT CHANGED
+  1. RENAMED to Expense Trends (new pixel logo + sidebar label).
+  2. CREDIT-CARD SPEND NOW HAS REAL VENDORS. CC lines (CRJ journal) carry
+     "Vendor | Cardholder | ... " in the Document description field.
+     The vendor is extracted automatically - 5,786 transactions worth
+     $913K stop hiding under "(blank)". Cardholder + memo are kept and
+     shown in drill-downs with a credit-card chip.
+  3. DRILL-DOWN: click any month amount OR any row TOTAL to see the
+     transactions behind it - date, location, account, cardholder, memo,
+     doc #, amount - in a clean readable panel (not a raw pivot dump).
+  4. EXPORT REPORT (xlsx) button: builds a styled workbook for ops -
+     vendor x month grid sectioned by GL group (orange headers, dark
+     group bands with live SUM formulas, flagged rows tinted amber/red,
+     analysis month highlighted) + a Review Queue sheet of all flags.
+     Sample included: EXPENSE_TRENDS_LIB_2026-06.xlsx (verified: 673
+     live formulas, zero errors).
 
 HOW TO DEPLOY (every step):
-  1. File Explorer -> Downloads -> right-click payroll_v2_pyrj_drilldown.zip
-     -> "Extract All..." -> "Browse..." -> go to
+  1. File Explorer -> Downloads -> right-click expense_trends_v2.zip ->
+     "Extract All..." -> "Browse..." -> go to
      C:\Users\SannySahin\OneDrive - Caspers Company\Documents\GitHub\AP_REC
      -> "Select Folder" -> "Extract"
   2. Click "Yes" to merge folders, "Replace the files in the destination".
-  3. Open GitHub Desktop -> 4 changed files appear -> type a summary ->
-     "Commit to main" -> "Push origin".
-  4. Wait ~2 min. Backend changed: if the Payroll page shows no warnings
-     after deploy, go to railway.app -> AP_REC project -> click the "web"
-     box -> "Deployments" tab -> "..." on the newest -> "Redeploy".
+  3. Open GitHub Desktop -> 8 changed files (1 new: trends_report.py) ->
+     type a summary -> "Commit to main" -> "Push origin".
+  4. Wait ~2 min. Backend changed: if CC vendors don't appear after
+     deploy, railway.app -> AP_REC -> "web" box -> "Deployments" ->
+     "..." on newest -> "Redeploy".
 
-Replaced files:
-  AP_REC\backend\payroll_engine.py
-  AP_REC\backend\main.py
-  AP_REC\frontend\src\api.js
-  AP_REC\frontend\src\pages\PayrollPage.jsx
+Files:
+  NEW      AP_REC\backend\trends_report.py
+  replaced AP_REC\backend\trends_engine.py
+  replaced AP_REC\backend\main.py
+  replaced AP_REC\frontend\src\api.js
+  replaced AP_REC\frontend\src\App.jsx
+  replaced AP_REC\frontend\src\pages\TrendsPage.jsx
+  replaced AP_REC\frontend\src\components\TrendsLogo.jsx
+  replaced AP_REC\frontend\src\components\Sidebar.jsx

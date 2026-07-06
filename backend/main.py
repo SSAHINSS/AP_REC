@@ -16,7 +16,8 @@ from sqlalchemy.orm import Session
 
 from reconciliation_engine import run_reconciliation
 from rename_engine import propose_renames, build_zip
-from trends_engine import analyze as analyze_trends
+from trends_engine import analyze as analyze_trends, detail as trends_detail_fn
+from trends_report import build_report
 from payroll_engine import (accrual as payroll_accrual, trends as payroll_trends,
                             rate_detail as payroll_rate_detail, cell_detail as payroll_cell_detail)
 from db import init_db, get_session, User, store_gl, load_gl, SessionLocal, USING_SQLITE
@@ -420,6 +421,67 @@ async def payroll_detail_ep(
                 raise HTTPException(status_code=422, detail="cell detail needs month")
             return payroll_cell_detail(tmp, category, month, entity=entity or None)
         raise HTTPException(status_code=422, detail="kind must be 'rate' or 'cell'")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+
+@app.post("/trends/detail")
+async def trends_detail_ep(
+    label: str = Form(...),
+    view: str = Form("vendor"),
+    entity: str = Form(""),
+    month: str = Form(""),
+    period: str = Form(""),
+    user: User = Depends(require_auth),
+    db: Session = Depends(get_session),
+):
+    stored = load_gl(db, user.id)
+    if not stored:
+        raise HTTPException(status_code=422, detail="No GL on file — upload one first")
+    _fn, csv_bytes, _up = stored
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
+            f.write(csv_bytes); tmp = f.name
+        return trends_detail_fn(tmp, label, view=view, entity=entity or None,
+                                month=month or None, period=period or None)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+@app.post("/trends/export")
+async def trends_export_ep(
+    entity: str = Form(""),
+    view: str = Form("vendor"),
+    period: str = Form(""),
+    user: User = Depends(require_auth),
+    db: Session = Depends(get_session),
+):
+    stored = load_gl(db, user.id)
+    if not stored:
+        raise HTTPException(status_code=422, detail="No GL on file — upload one first")
+    _fn, csv_bytes, _up = stored
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
+            f.write(csv_bytes); tmp = f.name
+        xlsx, fname = build_report(tmp, entity=entity or None, view=view, period=period or None)
+        return Response(
+            content=xlsx,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={fname}"},
+        )
     except HTTPException:
         raise
     except Exception as e:

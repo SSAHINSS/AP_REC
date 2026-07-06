@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { analyzeTrends } from '../api'
+import { analyzeTrends, trendsDetail, exportTrends } from '../api'
 
 const MONEY = v =>
   v === 0 || v == null ? '—'
@@ -61,6 +61,31 @@ export default function TrendsPage() {
   const [queueOpen, setQueueOpen] = useState(true)
   const [showFlagsOnly, setShowFlagsOnly] = useState(false)
   const [sort,    setSort]      = useState({ key: null, dir: 'desc' })  // key: 'label' | 'total' | month index
+  const [detail,  setDetail]    = useState(null)   // {key, loading, data, error}
+  const [exporting, setExporting] = useState(false)
+
+  async function toggleCell(label, monthOrTotal) {
+    const key = `${label}::${monthOrTotal}`
+    if (detail?.key === key) { setDetail(null); return }
+    setDetail({ key, loading: true })
+    try {
+      const d = await trendsDetail({
+        label, view, entity,
+        month: monthOrTotal === 'total' ? '' : months[monthOrTotal],
+        period: data?.period || '',
+      })
+      setDetail({ key, data: d })
+    } catch (e) {
+      setDetail({ key, error: e.message })
+    }
+  }
+
+  async function doExport() {
+    setExporting(true)
+    try { await exportTrends(entity, view, data?.period || '') }
+    catch (e) { setError(e.message) }
+    finally { setExporting(false) }
+  }
 
   async function run(nextEntity = entity, nextView = view, nextPeriod = period) {
     setRunning(true); setError(''); setNoGl(false)
@@ -68,6 +93,7 @@ export default function TrendsPage() {
       const res = await analyzeTrends(null, nextEntity, nextView, nextPeriod)
       setData(res)
       setSort({ key: null, dir: 'desc' })
+      setDetail(null)
       if (res.gl_filename) setStored({ filename: res.gl_filename, uploaded_at: res.gl_uploaded_at })
     } catch (e) {
       if ((e.message || '').includes('No GL')) setNoGl(true)
@@ -252,6 +278,10 @@ export default function TrendsPage() {
                 {group === ALL ? 'All Groups' : group}
               </span>
               <span style={{ flex: 1 }} />
+              <button className="btn btn-icon" onClick={doExport} disabled={exporting}
+                      style={{ padding: '3px 12px', fontSize: 10 }}>
+                {exporting ? 'Building…' : 'Export Report (xlsx)'}
+              </button>
               {flaggedCount > 0 &&
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--warn)' }}>
                   {flaggedCount} flagged
@@ -295,12 +325,23 @@ export default function TrendsPage() {
                         {r.label}
                       </td>
                       {r.values.map((v, i) => (
-                        <td key={i} style={td({
+                        <td key={i}
+                            onClick={() => v !== 0 && toggleCell(r.label, i)}
+                            style={td({
                           color: v === 0 ? 'var(--dim)' : v < 0 ? 'var(--err)' : undefined,
                           fontWeight: i === analysisIdx ? 600 : 400,
+                          cursor: v !== 0 ? 'pointer' : 'default',
+                          background: detail?.key === `${r.label}::${i}` ? 'color-mix(in srgb, var(--ox) 12%, transparent)' : undefined,
+                          textDecoration: v !== 0 ? 'underline dotted' : 'none',
+                          textUnderlineOffset: 3,
                         })}>{MONEY(v)}</td>
                       ))}
-                      <td style={td({ fontWeight: 600, position: 'sticky', right: 130, zIndex: 1, background: rowBg })}>{MONEY(r.total)}</td>
+                      <td onClick={() => r.total !== 0 && toggleCell(r.label, 'total')}
+                          style={td({ fontWeight: 600, position: 'sticky', right: 130, zIndex: 1,
+                                      background: detail?.key === `${r.label}::total` ? 'color-mix(in srgb, var(--ox) 12%, var(--surface))' : rowBg,
+                                      cursor: r.total !== 0 ? 'pointer' : 'default',
+                                      textDecoration: r.total !== 0 ? 'underline dotted' : 'none',
+                                      textUnderlineOffset: 3 })}>{MONEY(r.total)}</td>
                       <td style={td({ textAlign: 'left', position: 'sticky', right: 0, zIndex: 1, background: rowBg, width: 130, minWidth: 130 })}>{r.flag ? <FlagChip flag={r.flag} /> : ''}</td>
                     </tr>
                     )
@@ -316,6 +357,67 @@ export default function TrendsPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Drill-down: the transactions behind the clicked number */}
+            {detail && (
+              <div style={{ borderTop: '1px solid var(--border)', padding: '14px 16px' }}>
+                {detail.loading && <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>loading transactions…</div>}
+                {detail.error && <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--err)' }}>{detail.error}</div>}
+                {detail.data && (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap', marginBottom: 10 }}>
+                      <span style={{ fontWeight: 700, fontSize: 14 }}>{detail.data.label}</span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
+                        {detail.data.scope}{detail.data.entity ? ` · ${detail.data.entity}` : ' · all entities'}
+                        {' · '}{detail.data.row_count} transaction{detail.data.row_count === 1 ? '' : 's'}
+                        {detail.data.cc_count > 0 && ` · ${detail.data.cc_count} on credit card`}
+                        {detail.data.truncated && ' · first 500 shown'}
+                      </span>
+                      <span style={{ flex: 1 }} />
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 700, color: 'var(--ox)' }}>
+                        ${MONEY(detail.data.total)}
+                      </span>
+                      <button className="btn btn-icon" onClick={() => setDetail(null)}
+                              style={{ padding: '2px 10px', fontSize: 10 }}>Close</button>
+                    </div>
+                    <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--mono)', fontSize: 10 }}>
+                      <thead><tr>
+                        <th style={th({ textAlign: 'left', fontSize: 9 })}>DATE</th>
+                        <th style={th({ textAlign: 'left', fontSize: 9 })}>LOCATION</th>
+                        <th style={th({ textAlign: 'left', fontSize: 9 })}>ACCOUNT</th>
+                        <th style={th({ textAlign: 'left', fontSize: 9 })}>CARD / MEMO</th>
+                        <th style={th({ textAlign: 'left', fontSize: 9 })}>DOC #</th>
+                        <th style={th({ fontSize: 9 })}>AMOUNT</th>
+                      </tr></thead>
+                      <tbody>
+                        {detail.data.rows.map((t, i) => (
+                          <tr key={i} style={{ background: i % 2 ? 'transparent' : 'var(--stripe)' }}>
+                            <td style={td({ textAlign: 'left' })}>{t.date}</td>
+                            <td style={td({ textAlign: 'left' })}>{t.location}</td>
+                            <td style={td({ textAlign: 'left' })}>{t.account}</td>
+                            <td style={td({ textAlign: 'left', maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })}>
+                              {t.is_cc && (
+                                <span style={{ color: 'var(--ox)', border: '1px solid var(--ox-b)',
+                                               borderRadius: 2, padding: '0 4px', marginRight: 6, fontSize: 9 }}>
+                                  💳 {t.cardholder || 'card'}
+                                </span>
+                              )}
+                              {t.memo}
+                            </td>
+                            <td style={td({ textAlign: 'left' })}>{t.doc}</td>
+                            <td style={td({ color: t.amount < 0 ? 'var(--err)' : undefined })}>{MONEY(t.amount)}</td>
+                          </tr>
+                        ))}
+                        <tr style={{ borderTop: '1px solid var(--border)' }}>
+                          <td colSpan={5} style={td({ textAlign: 'left', fontWeight: 700 })}>TOTAL</td>
+                          <td style={td({ fontWeight: 700 })}>{MONEY(detail.data.total)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </>
       )}

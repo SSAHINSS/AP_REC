@@ -405,6 +405,24 @@ def load_gl(gl_path):
                              .fillna("").astype(str).str.strip()
                              .str.replace(r"\.0$", "", regex=True)
                              .replace({"nan": "", "None": ""}))
+
+    # ── Credit-card transactions (CRJ journal) ────────────────────────────
+    # CC lines post with a blank vendor, but their Document description is
+    # pipe-delimited: "Vendor | Cardholder [| Entity] [| Memo]".  Pipes occur
+    # ONLY in CRJ rows (verified against the full GL), so this is a precise
+    # identifier. Extract the real vendor so CC spend shows by vendor instead
+    # of piling into "(blank)"; keep cardholder + memo for drill-downs.
+    docdesc = df.get("Document description", pd.Series("", index=df.index)).fillna("").astype(str)
+    is_cc = (df["Journal"] == "CRJ") & docdesc.str.contains("|", regex=False)
+    df["CC Cardholder"] = ""
+    df["CC Memo"] = ""
+    if is_cc.any():
+        parts = docdesc[is_cc].str.split("|")
+        df.loc[is_cc, "Vendor name"] = parts.str[0].str.strip().replace("", "(blank)")
+        df.loc[is_cc, "CC Cardholder"] = parts.str[1].fillna("").str.strip()
+        df.loc[is_cc, "CC Memo"] = parts.apply(
+            lambda t: " | ".join(s.strip() for s in t[2:]) if len(t) > 2 else "")
+    df["Is CC"] = is_cc
     return df
 
 
@@ -560,3 +578,50 @@ def analyze(gl_path, entity=None, view="vendor", include_sales=False, period=Non
         "groups": groups_out,
         "flags": flags_out,
     }
+
+
+def detail(gl_path, label, view="vendor", entity=None, month=None, period=None):
+    """
+    Every transaction behind one table number.
+      label  : the row's vendor name or account title
+      month  : "YYYY-MM" for a single cell; None/"" = the row TOTAL, meaning
+               the whole displayed window (needs `period` to rebuild it)
+    Returns friendly rows incl. cardholder for credit-card lines.
+    """
+    df = load_gl(gl_path)
+    if entity:
+        df = df[df["Entity"] == entity.upper()]
+    key = "Vendor name" if view == "vendor" else "Account title"
+    df = df[df[key].astype(str) == str(label)]
+
+    if month:
+        df = df[df["Period"] == pd.Period(month, freq="M")]
+        scope = month
+    else:
+        end = pd.Period(period, freq="M") if period else df["Period"].max()
+        window = pd.period_range(end - 12, end + 1, freq="M")
+        df = df[df["Period"].isin(window)]
+        scope = f"{window[0]} – {window[-1]}"
+
+    df = df.sort_values("Posting date")
+    total = round(float(df["Amount"].sum()), 2)
+    cap = 500
+    rows = []
+    for _, r in df.head(cap).iterrows():
+        rows.append({
+            "date": r["Posting date"].strftime("%Y-%m-%d"),
+            "location": str(r.get("Location ID") or ""),
+            "journal": str(r.get("Journal") or ""),
+            "account": f'{r["Account no"]} {str(r.get("Account title") or "")[:36]}',
+            "vendor": str(r.get("Vendor name") or ""),
+            "cardholder": str(r.get("CC Cardholder") or ""),
+            "memo": (str(r.get("CC Memo") or "") if r.get("Is CC")
+                     else str(r.get("Journal entry line description") or "").replace("nan", ""))[:100],
+            "doc": str(r.get("Document number") or "")[:40],
+            "amount": round(float(r["Amount"]), 2),
+            "is_cc": bool(r.get("Is CC")),
+        })
+    return {"label": str(label), "view": view, "entity": entity.upper() if entity else None,
+            "scope": scope, "rows": rows, "row_count": int(len(df)),
+            "total": total, "truncated": bool(len(df) > cap),
+            "cc_count": int(df["Is CC"].sum())}
