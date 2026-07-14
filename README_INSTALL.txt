@@ -1,38 +1,38 @@
-EXPENSE TRENDS v3: CC/AP INDICATOR + FLOATING DRILL-DOWN + UNIVERSAL SORT
-=========================================================================
+EXPENSE TRENDS v4: CARDHOLDER ANALYSIS + WINDOW READABILITY
+===========================================================
 
 WHAT CHANGED
-  1. CC vs AP in the same table: a new sortable TYPE column tags each
-     vendor row - 💳 CC, AP, or ◐ MIX (paid both ways; hover shows the
-     CC/AP split). One holistic table, but you can tell payment method at
-     a glance and sort by it (click the TYPE header).
-  2. FLOATING DRILL-DOWN WINDOW: clicking any number opens a draggable
-     window (move it by the title bar, resize from the bottom-right corner,
-     minimize (-), maximize (window icon), close (X)). It floats over the
-     page - no lost scroll position, no new browser tab.
-  3. COMPARE UP TO 3 PERIODS: inside the window, "Compare to" buttons -
-     Prior period, Same month last year, Two periods prior - show the
-     transaction detail side by side.
-  4. EVERY TABLE SORTABLE: click any header in the drill-down window
-     (date, location, type, account, cardholder, memo, doc #, amount) to
-     sort asc/desc. The main table's every column is sortable too.
+  1. CREDIT CARDS BY CARDHOLDER — a new mode toggle at the top of the
+     Expense Trends page: "Expense Trends" | "Credit Cards by Cardholder".
+     The cardholder view shows CC spend ONLY (no AP), pivoted by
+     cardholder x month, with:
+       - Entity multi-select (one, several, or ALL)
+       - Cardholder multi-select (one, several, or ALL - 76 detected)
+       - Period range (from / to any month)
+       - Every column sortable (cardholder, entities, txns, any month, total)
+       - Click any amount -> the same floating window with that person's
+         transactions (vendor, memo, doc, amount).
+  2. POP-UP READABILITY — the drill-down window no longer truncates:
+     long account/memo/cardholder/doc fields WRAP instead of cutting off,
+     and hovering any cell shows the full value as a tooltip.
+  3. BIGGER DEFAULT WINDOW — opens at 1180x680 (was 920x540).
 
 HOW TO DEPLOY (every step):
-  1. File Explorer -> Downloads -> right-click expense_trends_v3.zip ->
+  1. File Explorer -> Downloads -> right-click cardholder_analysis.zip ->
      "Extract All..." -> "Browse..." -> go to
      C:\Users\SannySahin\OneDrive - Caspers Company\Documents\GitHub\AP_REC
      -> "Select Folder" -> "Extract"
   2. Click "Yes" to merge folders, "Replace the files in the destination".
-  3. Open GitHub Desktop -> 6 changed files (2 new: DetailWindow.jsx,
-     useSort.js) -> type a summary -> "Commit to main" -> "Push origin".
-  4. Wait ~2 min. Backend changed: if comparisons error after deploy,
-     railway.app -> AP_REC -> "web" box -> "Deployments" -> "..." on the
-     newest -> "Redeploy".
+  3. Open GitHub Desktop -> 6 changed files (1 new: CardholderView.jsx) ->
+     type a summary -> "Commit to main" -> "Push origin".
+  4. Wait ~2 min. Backend changed: if the cardholder view errors after
+     deploy, railway.app -> AP_REC -> "web" box -> "Deployments" ->
+     "..." on the newest -> "Redeploy".
 
 Files:
-  NEW      AP_REC\frontend\src\components\DetailWindow.jsx
-  NEW      AP_REC\frontend\src\components\useSort.js
+  NEW      AP_REC\frontend\src\pages\CardholderView.jsx
   replaced AP_REC\backend\trends_engine.py
   replaced AP_REC\backend\main.py
   replaced AP_REC\frontend\src\api.js
   replaced AP_REC\frontend\src\pages\TrendsPage.jsx
+  replaced AP_REC\frontend\src\components\DetailWindow.jsx

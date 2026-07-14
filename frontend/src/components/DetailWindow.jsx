@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useSort } from './useSort'
-import { trendsDetail } from '../api'
+import { trendsDetail, cardholderDetail } from '../api'
 
 const MONEY = v =>
   v === 0 || v == null ? '—'
@@ -51,8 +51,8 @@ function SliceTable({ slice }) {
           <tbody>
             {sorted.map((t, i) => (
               <tr key={i} style={{ background: i % 2 ? 'transparent' : 'var(--stripe)' }}>
-                <td style={dtd()}>{t.date}</td>
-                <td style={dtd()}>{t.location}</td>
+                <td style={dtd()} title={t.date}>{t.date}</td>
+                <td style={dtd()} title={t.location}>{t.location}</td>
                 <td style={dtd()}>
                   <span style={{ fontSize: 9, padding: '0 4px', borderRadius: 2,
                                  color: t.is_cc ? 'var(--ox)' : 'var(--muted)',
@@ -60,10 +60,10 @@ function SliceTable({ slice }) {
                     {t.is_cc ? '💳 CC' : 'AP'}
                   </span>
                 </td>
-                <td style={dtd()}>{t.account}</td>
-                <td style={dtd()}>{t.cardholder}</td>
-                <td style={dtd({ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })}>{t.memo}</td>
-                <td style={dtd()}>{t.doc}</td>
+                <td style={dtd({ whiteSpace: 'normal', maxWidth: 240, wordBreak: 'break-word' })} title={t.account}>{t.account}</td>
+                <td style={dtd({ whiteSpace: 'normal', maxWidth: 130, wordBreak: 'break-word' })} title={t.cardholder}>{t.cardholder}</td>
+                <td style={dtd({ whiteSpace: 'normal', maxWidth: 300, wordBreak: 'break-word' })} title={t.memo}>{t.memo}</td>
+                <td style={dtd({ whiteSpace: 'normal', maxWidth: 120, wordBreak: 'break-word' })} title={t.doc}>{t.doc}</td>
                 <td style={dtd({ textAlign: 'right', color: t.amount < 0 ? 'var(--err)' : undefined })}>{MONEY(t.amount)}</td>
               </tr>
             ))}
@@ -93,18 +93,30 @@ export default function DetailWindow({ req, onClose }) {
   const [minimized, setMinimized] = useState(false)
   const [maximized, setMaximized] = useState(false)
 
-  const [pos, setPos]   = useState({ x: Math.max(40, window.innerWidth / 2 - 460), y: 90 })
-  const [size, setSize] = useState({ w: 920, h: 540 })
+  const [pos, setPos]   = useState({ x: Math.max(24, window.innerWidth / 2 - 590), y: 90 })
+  const [size, setSize] = useState({ w: 1180, h: 680 })
   const drag = useRef(null)
 
   async function fetchDetail(cmps = comparisons) {
     setLoading(true); setError('')
     try {
-      const d = await trendsDetail({
-        label: req.label, view: req.view, entity: req.entity,
-        month: req.month, period: req.period,
-        comparisons: cmps.join(','),
-      })
+      let d
+      if (req.kind === 'cardholder') {
+        const cd = await cardholderDetail({
+          holder: req.holder, entities: req.entities || [],
+          start: req.start, end: req.end,
+        })
+        // shape into the slice format SliceTable expects
+        d = { label: req.holder, is_window: true, scope: req.title || req.holder,
+              rows: cd.rows.map(r => ({ ...r, is_cc: true, cardholder: req.holder })),
+              row_count: cd.row_count, total: cd.total, cc_count: cd.row_count,
+              truncated: cd.truncated, comparisons: [] }
+      } else {
+        d = await trendsDetail({
+          label: req.label, view: req.view, entity: req.entity,
+          month: req.month, period: req.period, comparisons: cmps.join(','),
+        })
+      }
       setData(d)
     } catch (e) { setError(e.message) }
     finally { setLoading(false) }
@@ -137,7 +149,7 @@ export default function DetailWindow({ req, onClose }) {
     window.removeEventListener('mouseup', onDragEnd)
   }
 
-  const canCompare = req.month && !data?.is_window
+  const canCompare = req.kind !== 'cardholder' && req.month && !data?.is_window
   const frame = maximized
     ? { left: 12, top: 12, width: 'calc(100vw - 24px)', height: 'calc(100vh - 24px)' }
     : { left: pos.x, top: pos.y, width: size.w, height: minimized ? 'auto' : size.h }
@@ -157,10 +169,12 @@ export default function DetailWindow({ req, onClose }) {
                     borderBottom: '1px solid var(--border)',
                     cursor: maximized ? 'default' : 'move', userSelect: 'none' }}>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700 }}>
-          {req.label}
+          {req.kind === 'cardholder' ? '💳 ' + req.holder : req.label}
         </span>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>
-          {req.entity || 'all entities'}{req.month ? ` · ${req.month}` : ' · full window'}
+          {req.kind === 'cardholder'
+            ? (req.title || '')
+            : `${req.entity || 'all entities'}${req.month ? ` · ${req.month}` : ' · full window'}`}
         </span>
         <span style={{ flex: 1 }} />
         <button onClick={() => setMinimized(m => !m)} title="Minimize" style={winBtn}>{minimized ? '▢' : '—'}</button>

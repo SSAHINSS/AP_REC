@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { analyzeTrends, exportTrends } from '../api'
 import DetailWindow from '../components/DetailWindow'
+import CardholderView from './CardholderView'
 
 const MONEY = v =>
   v === 0 || v == null ? '—'
@@ -63,6 +64,7 @@ export default function TrendsPage() {
   const [showFlagsOnly, setShowFlagsOnly] = useState(false)
   const [sort,    setSort]      = useState({ key: null, dir: 'desc' })  // key: 'label' | 'total' | month index
   const [win,     setWin]       = useState(null)   // floating detail window request
+  const [mode,    setMode]      = useState('trends')  // 'trends' | 'cards'
   const [exporting, setExporting] = useState(false)
 
   function openDetail(label, monthOrTotal) {
@@ -185,18 +187,25 @@ export default function TrendsPage() {
                   display: 'flex', flexDirection: 'column', gap: 24 }}>
       <style>{CROSSHAIR_CSS}</style>
 
-      {noGl && !data && (
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={() => setMode('trends')} style={modePill(mode === 'trends')}>Expense Trends</button>
+        <button onClick={() => setMode('cards')} style={modePill(mode === 'cards')}>Credit Cards by Cardholder</button>
+      </div>
+
+      {mode === 'cards' && <CardholderView openDetail={setWin} />}
+
+      {mode === 'trends' && noGl && !data && (
         <div className="card" style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>
           No GL on file yet. Upload it on the <b style={{ color: 'var(--ox)' }}>Home</b> page —
           every module reads the same saved GL.
         </div>
       )}
-      {error && <div className="card" style={{ color: 'var(--err)', fontFamily: 'var(--mono)', fontSize: 12 }}>{error}</div>}
-      {running && !data && (
+      {mode === 'trends' && error && <div className="card" style={{ color: 'var(--err)', fontFamily: 'var(--mono)', fontSize: 12 }}>{error}</div>}
+      {mode === 'trends' && running && !data && (
         <div className="card" style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>Analyzing…</div>
       )}
 
-      {data && !data.error && (
+      {mode === 'trends' && data && !data.error && (
         <>
           {/* Entity + view + month + group selectors */}
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -382,6 +391,12 @@ export default function TrendsPage() {
   )
 }
 
+const modePill = active => ({
+  fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer', padding: '6px 14px', borderRadius: 3,
+  color: active ? 'var(--ox)' : 'var(--muted)', fontWeight: active ? 700 : 400,
+  background: active ? 'rgba(255,112,48,0.1)' : 'transparent',
+  border: active ? '1px solid var(--ox-b)' : '1px solid var(--border)',
+})
 const payChip = (fg, bd) => ({
   fontFamily: 'var(--mono)', fontSize: 9, whiteSpace: 'nowrap',
   color: fg, border: `1px solid ${bd}`, borderRadius: 2, padding: '1px 5px',

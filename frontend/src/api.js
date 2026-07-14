@@ -253,3 +253,31 @@ export async function exportTrends(entity = '', view = 'vendor', period = '') {
   link.click()
   URL.revokeObjectURL(url)
 }
+
+export async function ccCardholders({ entities = [], holders = [], start = '', end = '' }) {
+  const form = new FormData()
+  form.append('entities', entities.join(','))
+  form.append('holders', holders.join('|'))   // names can contain commas
+  form.append('start', start)
+  form.append('end', end)
+  const res = await fetch(`${BASE}/trends/cardholders`, {
+    method: 'POST', headers: { Authorization: `Bearer ${getToken()}` }, body: form,
+  })
+  checkAuth(res)
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Cardholder analysis failed')
+  return res.json()
+}
+
+export async function cardholderDetail({ holder, entities = [], start = '', end = '' }) {
+  const form = new FormData()
+  form.append('holder', holder)
+  form.append('entities', entities.join(','))
+  form.append('start', start)
+  form.append('end', end)
+  const res = await fetch(`${BASE}/trends/cardholder_detail`, {
+    method: 'POST', headers: { Authorization: `Bearer ${getToken()}` }, body: form,
+  })
+  checkAuth(res)
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Cardholder detail failed')
+  return res.json()
+}

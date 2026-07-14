@@ -681,3 +681,91 @@ def detail(gl_path, label, view="vendor", entity=None, month=None, period=None,
             "entity": entity.upper() if entity else None,
             "month": month or "", "is_window": not bool(month),
             **primary, "comparisons": comps}
+
+
+def cc_by_cardholder(gl_path, entities=None, holders=None, start=None, end=None):
+    """
+    Credit-card spend pivoted by CARDHOLDER x month (CC transactions only,
+    no AP). Filters:
+      entities : list of entity prefixes, or None for all
+      holders  : list of cardholder names, or None for all
+      start/end: "YYYY-MM" inclusive bounds, or None for full data range
+    Returns cardholder rows (values per month + total), month labels, the
+    roster of available entities/cardholders, and column totals.
+    """
+    df = load_gl(gl_path)
+    df = df[df["Is CC"]]                       # CC only — AP excluded entirely
+    if entities:
+        ents = {e.upper() for e in entities}
+        df = df[df["Entity"].isin(ents)]
+
+    all_holders = sorted(h for h in df["CC Cardholder"].dropna().unique() if h)
+    if holders:
+        want = set(holders)
+        df = df[df["CC Cardholder"].isin(want)]
+
+    all_months = sorted(df["Period"].unique())
+    if all_months:
+        lo = pd.Period(start, freq="M") if start else all_months[0]
+        hi = pd.Period(end, freq="M") if end else all_months[-1]
+        window = [m for m in pd.period_range(lo, hi, freq="M")]
+    else:
+        window = []
+    df = df[df["Period"].isin(window)] if window else df.iloc[0:0]
+    month_labels = [str(m) for m in window]
+
+    # roster for the pickers (independent of holder filter so UI stays populated)
+    roster_df = load_gl(gl_path)
+    roster_df = roster_df[roster_df["Is CC"]]
+    roster_entities = sorted(roster_df["Entity"].dropna().unique().tolist())
+
+    rows = []
+    if not df.empty and window:
+        piv = (df.groupby(["CC Cardholder", "Period"])["Amount"].sum()
+                 .unstack("Period").reindex(columns=window).fillna(0.0))
+        for holder, r in piv.iterrows():
+            vals = [round(float(v), 2) for v in r.tolist()]
+            # per-holder entity + top vendor context
+            hdf = df[df["CC Cardholder"] == holder]
+            ent_list = sorted(hdf["Entity"].dropna().unique().tolist())
+            top_vendor = (hdf.groupby("Vendor name")["Amount"].sum()
+                          .sort_values(ascending=False).index[:1].tolist())
+            rows.append({"label": str(holder), "values": vals,
+                         "total": round(float(sum(vals)), 2),
+                         "entities": ent_list, "txn_count": int(len(hdf)),
+                         "top_vendor": top_vendor[0] if top_vendor else ""})
+        rows.sort(key=lambda r: -abs(r["total"]))
+
+    totals = [round(sum(r["values"][i] for r in rows), 2) for i in range(len(window))]
+    return {"engine": ENGINE_VERSION, "mode": "cc_by_cardholder",
+            "months": month_labels, "rows": rows, "totals": totals,
+            "grand_total": round(sum(r["total"] for r in rows), 2),
+            "all_entities": roster_entities, "all_cardholders": all_holders,
+            "entities": entities or [], "holders": holders or []}
+
+
+def cardholder_detail(gl_path, holder, entities=None, start=None, end=None):
+    """Every CC transaction for one cardholder (optionally entity/period filtered)."""
+    df = load_gl(gl_path)
+    df = df[df["Is CC"] & (df["CC Cardholder"] == holder)]
+    if entities:
+        df = df[df["Entity"].isin({e.upper() for e in entities})]
+    if start:
+        df = df[df["Period"] >= pd.Period(start, freq="M")]
+    if end:
+        df = df[df["Period"] <= pd.Period(end, freq="M")]
+    df = df.sort_values("Posting date")
+    rows = []
+    for _, r in df.head(1000).iterrows():
+        rows.append({
+            "date": r["Posting date"].strftime("%Y-%m-%d"),
+            "location": str(r.get("Location ID") or ""),
+            "vendor": str(r.get("Vendor name") or ""),
+            "account": f'{r["Account no"]} {str(r.get("Account title") or "")[:36]}',
+            "memo": str(r.get("CC Memo") or "")[:120],
+            "doc": str(r.get("Document number") or "")[:40],
+            "amount": round(float(r["Amount"]), 2),
+        })
+    return {"holder": holder, "rows": rows, "row_count": int(len(df)),
+            "total": round(float(df["Amount"].sum()), 2),
+            "truncated": bool(len(df) > 1000)}

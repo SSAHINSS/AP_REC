@@ -16,7 +16,8 @@ from sqlalchemy.orm import Session
 
 from reconciliation_engine import run_reconciliation
 from rename_engine import propose_renames, build_zip
-from trends_engine import analyze as analyze_trends, detail as trends_detail_fn
+from trends_engine import (analyze as analyze_trends, detail as trends_detail_fn,
+                            cc_by_cardholder as cc_holder_fn, cardholder_detail as cardholder_detail_fn)
 from trends_report import build_report
 from payroll_engine import (accrual as payroll_accrual, trends as payroll_trends,
                             rate_detail as payroll_rate_detail, cell_detail as payroll_cell_detail)
@@ -485,6 +486,64 @@ async def trends_export_ep(
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f"attachment; filename={fname}"},
         )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+
+@app.post("/trends/cardholders")
+async def trends_cardholders_ep(
+    entities: str = Form(""),      # comma-separated entity prefixes
+    holders: str = Form(""),       # comma-separated cardholder names
+    start: str = Form(""),
+    end: str = Form(""),
+    user: User = Depends(require_auth),
+    db: Session = Depends(get_session),
+):
+    stored = load_gl(db, user.id)
+    if not stored:
+        raise HTTPException(status_code=422, detail="No GL on file — upload one first")
+    _fn, csv_bytes, _up = stored
+    ents = [e for e in entities.split(",") if e] or None
+    hlds = [h for h in holders.split("|") if h] or None   # names may contain commas → pipe-delimit
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
+            f.write(csv_bytes); tmp = f.name
+        return cc_holder_fn(tmp, entities=ents, holders=hlds, start=start or None, end=end or None)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+@app.post("/trends/cardholder_detail")
+async def trends_cardholder_detail_ep(
+    holder: str = Form(...),
+    entities: str = Form(""),
+    start: str = Form(""),
+    end: str = Form(""),
+    user: User = Depends(require_auth),
+    db: Session = Depends(get_session),
+):
+    stored = load_gl(db, user.id)
+    if not stored:
+        raise HTTPException(status_code=422, detail="No GL on file — upload one first")
+    _fn, csv_bytes, _up = stored
+    ents = [e for e in entities.split(",") if e] or None
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
+            f.write(csv_bytes); tmp = f.name
+        return cardholder_detail_fn(tmp, holder, entities=ents, start=start or None, end=end or None)
     except HTTPException:
         raise
     except Exception as e:
