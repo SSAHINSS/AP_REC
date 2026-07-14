@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { analyzeTrends, trendsDetail, exportTrends } from '../api'
 
 const MONEY = v =>
@@ -63,6 +63,15 @@ export default function TrendsPage() {
   const [sort,    setSort]      = useState({ key: null, dir: 'desc' })  // key: 'label' | 'total' | month index
   const [detail,  setDetail]    = useState(null)   // {key, loading, data, error}
   const [exporting, setExporting] = useState(false)
+  const detailRef = useRef(null)
+
+  // The table can be hundreds of rows tall — when a number is clicked,
+  // bring the drill-down panel into view so the click visibly does something.
+  useEffect(() => {
+    if (detail && detailRef.current) {
+      detailRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [detail])
 
   async function toggleCell(label, monthOrTotal) {
     const key = `${label}::${monthOrTotal}`
@@ -360,7 +369,8 @@ export default function TrendsPage() {
 
             {/* Drill-down: the transactions behind the clicked number */}
             {detail && (
-              <div style={{ borderTop: '1px solid var(--border)', padding: '14px 16px' }}>
+              <div ref={detailRef} style={{ borderTop: '1px solid var(--border)', padding: '14px 16px',
+                                            scrollMarginBottom: 24 }}>
                 {detail.loading && <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>loading transactions…</div>}
                 {detail.error && <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--err)' }}>{detail.error}</div>}
                 {detail.data && (
