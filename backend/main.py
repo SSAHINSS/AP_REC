@@ -438,6 +438,7 @@ async def trends_detail_ep(
     entity: str = Form(""),
     month: str = Form(""),
     period: str = Form(""),
+    comparisons: str = Form(""),
     user: User = Depends(require_auth),
     db: Session = Depends(get_session),
 ):
@@ -445,12 +446,14 @@ async def trends_detail_ep(
     if not stored:
         raise HTTPException(status_code=422, detail="No GL on file — upload one first")
     _fn, csv_bytes, _up = stored
+    cmps = [c for c in comparisons.split(",") if c] if comparisons else None
     tmp = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
             f.write(csv_bytes); tmp = f.name
         return trends_detail_fn(tmp, label, view=view, entity=entity or None,
-                                month=month or None, period=period or None)
+                                month=month or None, period=period or None,
+                                comparisons=cmps)
     except HTTPException:
         raise
     except Exception as e:

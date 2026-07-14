@@ -538,6 +538,11 @@ def analyze(gl_path, entity=None, view="vendor", include_sales=False, period=Non
         if pivot.empty:
             continue
 
+        # Per-row credit-card vs AP split (over the whole window) so the shared
+        # table can flag how each vendor's spend was paid.
+        cc_by_label = (gdf[gdf["Is CC"]].groupby(row_key)["Amount"].sum().to_dict())
+        ap_by_label = (gdf[~gdf["Is CC"]].groupby(row_key)["Amount"].sum().to_dict())
+
         # Last doc number in the ANALYSIS month per row label (for "show your work")
         cur = months[-2]
         last_docs = (gdf[gdf["Period"] == cur]
@@ -547,7 +552,17 @@ def analyze(gl_path, entity=None, view="vendor", include_sales=False, period=Non
         rows = []
         for label, r in pivot.iterrows():
             vals = [round(float(v), 2) for v in r.tolist()]
-            row = {"label": str(label), "values": vals, "total": round(float(sum(vals)), 2)}
+            cc_t = round(float(cc_by_label.get(label, 0.0)), 2)
+            ap_t = round(float(ap_by_label.get(label, 0.0)), 2)
+            # payment type: cc / ap / mixed (a vendor can be paid both ways)
+            if cc_t and ap_t:
+                pay = "mixed"
+            elif cc_t:
+                pay = "cc"
+            else:
+                pay = "ap"
+            row = {"label": str(label), "values": vals, "total": round(float(sum(vals)), 2),
+                   "cc_total": cc_t, "ap_total": ap_t, "pay_type": pay}
             # Flag stats use prior 12 + analysis month; the spillover (+1) column
             # is display-only and never enters the statistics.
             f = _flag_row(vals[:-1], month_labels[:-1])
@@ -580,34 +595,25 @@ def analyze(gl_path, entity=None, view="vendor", include_sales=False, period=Non
     }
 
 
-def detail(gl_path, label, view="vendor", entity=None, month=None, period=None):
-    """
-    Every transaction behind one table number.
-      label  : the row's vendor name or account title
-      month  : "YYYY-MM" for a single cell; None/"" = the row TOTAL, meaning
-               the whole displayed window (needs `period` to rebuild it)
-    Returns friendly rows incl. cardholder for credit-card lines.
-    """
-    df = load_gl(gl_path)
-    if entity:
-        df = df[df["Entity"] == entity.upper()]
-    key = "Vendor name" if view == "vendor" else "Account title"
-    df = df[df[key].astype(str) == str(label)]
-
+def _detail_one(df_label, month=None, period=None):
+    """Transactions for one period slice of an already-label-filtered frame."""
     if month:
-        df = df[df["Period"] == pd.Period(month, freq="M")]
+        d = df_label[df_label["Period"] == pd.Period(month, freq="M")]
         scope = month
     else:
-        end = pd.Period(period, freq="M") if period else df["Period"].max()
+        end = pd.Period(period, freq="M") if period else (
+            df_label["Period"].max() if not df_label.empty else None)
+        if end is None:
+            return {"scope": "—", "rows": [], "row_count": 0, "total": 0.0,
+                    "truncated": False, "cc_count": 0, "cc_total": 0.0, "ap_total": 0.0}
         window = pd.period_range(end - 12, end + 1, freq="M")
-        df = df[df["Period"].isin(window)]
+        d = df_label[df_label["Period"].isin(window)]
         scope = f"{window[0]} – {window[-1]}"
 
-    df = df.sort_values("Posting date")
-    total = round(float(df["Amount"].sum()), 2)
+    d = d.sort_values("Posting date")
     cap = 500
     rows = []
-    for _, r in df.head(cap).iterrows():
+    for _, r in d.head(cap).iterrows():
         rows.append({
             "date": r["Posting date"].strftime("%Y-%m-%d"),
             "location": str(r.get("Location ID") or ""),
@@ -621,7 +627,57 @@ def detail(gl_path, label, view="vendor", entity=None, month=None, period=None):
             "amount": round(float(r["Amount"]), 2),
             "is_cc": bool(r.get("Is CC")),
         })
-    return {"label": str(label), "view": view, "entity": entity.upper() if entity else None,
-            "scope": scope, "rows": rows, "row_count": int(len(df)),
-            "total": total, "truncated": bool(len(df) > cap),
-            "cc_count": int(df["Is CC"].sum())}
+    cc = d[d["Is CC"]]
+    return {"scope": scope, "rows": rows, "row_count": int(len(d)),
+            "total": round(float(d["Amount"].sum()), 2),
+            "truncated": bool(len(d) > cap), "cc_count": int(len(cc)),
+            "cc_total": round(float(cc["Amount"].sum()), 2),
+            "ap_total": round(float(d[~d["Is CC"]]["Amount"].sum()), 2)}
+
+
+def _period_offsets(base_month, comparisons):
+    """Resolve comparison keywords to concrete YYYY-MM relative to base_month."""
+    out = []
+    if not base_month:
+        return out
+    b = pd.Period(base_month, freq="M")
+    for cmp in comparisons:
+        if cmp == "prior_period":
+            out.append(("Prior period", str(b - 1)))
+        elif cmp == "same_last_year":
+            out.append(("Same month last year", str(b - 12)))
+        elif cmp == "two_prior":
+            out.append(("Two periods prior", str(b - 2)))
+    return out
+
+
+def detail(gl_path, label, view="vendor", entity=None, month=None, period=None,
+           comparisons=None):
+    """
+    Every transaction behind one table number, plus optional comparison periods.
+      label       : the row's vendor name or account title
+      month       : "YYYY-MM" for a single cell; None/"" = the row TOTAL (window)
+      comparisons : list of "prior_period" | "same_last_year" | "two_prior"
+                    (only meaningful when `month` is a single period)
+    Returns the primary slice plus a `comparisons` list of the same shape.
+    """
+    df = load_gl(gl_path)
+    if entity:
+        df = df[df["Entity"] == entity.upper()]
+    key = "Vendor name" if view == "vendor" else "Account title"
+    df = df[df[key].astype(str) == str(label)]
+
+    primary = _detail_one(df, month=month, period=period)
+
+    comps = []
+    if month and comparisons:
+        for cmp_label, cmp_month in _period_offsets(month, comparisons):
+            slice_ = _detail_one(df, month=cmp_month)
+            slice_["comparison_label"] = cmp_label
+            slice_["month"] = cmp_month
+            comps.append(slice_)
+
+    return {"label": str(label), "view": view,
+            "entity": entity.upper() if entity else None,
+            "month": month or "", "is_window": not bool(month),
+            **primary, "comparisons": comps}

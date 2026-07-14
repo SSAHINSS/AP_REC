@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
-import { analyzeTrends, trendsDetail, exportTrends } from '../api'
+import { useState, useEffect } from 'react'
+import { analyzeTrends, exportTrends } from '../api'
+import DetailWindow from '../components/DetailWindow'
 
 const MONEY = v =>
   v === 0 || v == null ? '—'
@@ -61,32 +62,16 @@ export default function TrendsPage() {
   const [queueOpen, setQueueOpen] = useState(true)
   const [showFlagsOnly, setShowFlagsOnly] = useState(false)
   const [sort,    setSort]      = useState({ key: null, dir: 'desc' })  // key: 'label' | 'total' | month index
-  const [detail,  setDetail]    = useState(null)   // {key, loading, data, error}
+  const [win,     setWin]       = useState(null)   // floating detail window request
   const [exporting, setExporting] = useState(false)
-  const detailRef = useRef(null)
 
-  // The table can be hundreds of rows tall — when a number is clicked,
-  // bring the drill-down panel into view so the click visibly does something.
-  useEffect(() => {
-    if (detail && detailRef.current) {
-      detailRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    }
-  }, [detail])
-
-  async function toggleCell(label, monthOrTotal) {
-    const key = `${label}::${monthOrTotal}`
-    if (detail?.key === key) { setDetail(null); return }
-    setDetail({ key, loading: true })
-    try {
-      const d = await trendsDetail({
-        label, view, entity,
-        month: monthOrTotal === 'total' ? '' : months[monthOrTotal],
-        period: data?.period || '',
-      })
-      setDetail({ key, data: d })
-    } catch (e) {
-      setDetail({ key, error: e.message })
-    }
+  function openDetail(label, monthOrTotal) {
+    setWin({
+      label, view, entity,
+      month: monthOrTotal === 'total' ? '' : months[monthOrTotal],
+      period: data?.period || '',
+      _k: `${label}:${monthOrTotal}:${Date.now()}`,
+    })
   }
 
   async function doExport() {
@@ -102,7 +87,7 @@ export default function TrendsPage() {
       const res = await analyzeTrends(null, nextEntity, nextView, nextPeriod)
       setData(res)
       setSort({ key: null, dir: 'desc' })
-      setDetail(null)
+      setWin(null)
       if (res.gl_filename) setStored({ filename: res.gl_filename, uploaded_at: res.gl_uploaded_at })
     } catch (e) {
       if ((e.message || '').includes('No GL')) setNoGl(true)
@@ -146,8 +131,12 @@ export default function TrendsPage() {
         if (m) {
           m.values = m.values.map((v, i) => Math.round((v + r.values[i]) * 100) / 100)
           m.total = Math.round((m.total + r.total) * 100) / 100
+          m.cc_total = Math.round((m.cc_total + (r.cc_total || 0)) * 100) / 100
+          m.ap_total = Math.round((m.ap_total + (r.ap_total || 0)) * 100) / 100
+          m.pay_type = m.cc_total && m.ap_total ? 'mixed' : m.cc_total ? 'cc' : 'ap'
         } else {
-          merged.set(r.label, { label: r.label, values: [...r.values], total: r.total })
+          merged.set(r.label, { label: r.label, values: [...r.values], total: r.total,
+                                cc_total: r.cc_total || 0, ap_total: r.ap_total || 0, pay_type: r.pay_type })
         }
       }
     }
@@ -169,7 +158,9 @@ export default function TrendsPage() {
         ? a.label.localeCompare(b.label)
         : b.label.localeCompare(a.label))
     } else {
-      const val = r => sort.key === 'total' ? r.total : (r.values[sort.key] || 0)
+      const val = r => sort.key === 'total' ? r.total
+        : sort.key === 'pay' ? (r.cc_total || 0)
+        : (r.values[sort.key] || 0)
       rows.sort((a, b) => sort.dir === 'asc' ? val(a) - val(b) : val(b) - val(a))
     }
     return rows
@@ -308,6 +299,10 @@ export default function TrendsPage() {
                                     background: 'var(--surface)', cursor: 'pointer' })}>
                       {view === 'vendor' ? 'VENDOR' : 'ACCOUNT'}{arrow('label')}
                     </th>
+                    <th onClick={() => clickSort('pay')}
+                        style={th({ textAlign: 'left', cursor: 'pointer', width: 64, minWidth: 64 })}>
+                      TYPE{arrow('pay')}
+                    </th>
                     {shortMonths.map((m, i) => (
                       <th key={m} onClick={() => clickSort(i)}
                           style={th({ cursor: 'pointer',
@@ -333,21 +328,28 @@ export default function TrendsPage() {
                                       maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })}>
                         {r.label}
                       </td>
+                      <td style={td({ textAlign: 'left', width: 64, minWidth: 64 })}>
+                        {r.pay_type === 'cc' && <span style={payChip('var(--ox)', 'var(--ox-b)')}>💳 CC</span>}
+                        {r.pay_type === 'ap' && <span style={payChip('var(--muted)', 'var(--border)')}>AP</span>}
+                        {r.pay_type === 'mixed' && (
+                          <span title={`CC $${Math.round(r.cc_total).toLocaleString()} · AP $${Math.round(r.ap_total).toLocaleString()}`}
+                                style={payChip('var(--warn)', 'color-mix(in srgb, var(--warn) 40%, transparent)')}>◐ MIX</span>
+                        )}
+                      </td>
                       {r.values.map((v, i) => (
                         <td key={i}
-                            onClick={() => v !== 0 && toggleCell(r.label, i)}
+                            onClick={() => v !== 0 && openDetail(r.label, i)}
                             style={td({
                           color: v === 0 ? 'var(--dim)' : v < 0 ? 'var(--err)' : undefined,
                           fontWeight: i === analysisIdx ? 600 : 400,
                           cursor: v !== 0 ? 'pointer' : 'default',
-                          background: detail?.key === `${r.label}::${i}` ? 'color-mix(in srgb, var(--ox) 12%, transparent)' : undefined,
                           textDecoration: v !== 0 ? 'underline dotted' : 'none',
                           textUnderlineOffset: 3,
                         })}>{MONEY(v)}</td>
                       ))}
-                      <td onClick={() => r.total !== 0 && toggleCell(r.label, 'total')}
+                      <td onClick={() => r.total !== 0 && openDetail(r.label, 'total')}
                           style={td({ fontWeight: 600, position: 'sticky', right: 130, zIndex: 1,
-                                      background: detail?.key === `${r.label}::total` ? 'color-mix(in srgb, var(--ox) 12%, var(--surface))' : rowBg,
+                                      background: rowBg,
                                       cursor: r.total !== 0 ? 'pointer' : 'default',
                                       textDecoration: r.total !== 0 ? 'underline dotted' : 'none',
                                       textUnderlineOffset: 3 })}>{MONEY(r.total)}</td>
@@ -357,6 +359,7 @@ export default function TrendsPage() {
                   })}
                   <tr style={{ borderTop: '1px solid var(--border)' }}>
                     <td style={td({ textAlign: 'left', fontWeight: 700, position: 'sticky', left: 0, zIndex: 1, background: 'var(--surface)' })}>TOTAL</td>
+                    <td style={td({ width: 64, minWidth: 64 })}></td>
                     {colTotals.map((v, i) => (
                       <td key={i} style={td({ fontWeight: 700 })}>{MONEY(v)}</td>
                     ))}
@@ -368,75 +371,21 @@ export default function TrendsPage() {
             </div>
 
             {/* Drill-down: the transactions behind the clicked number */}
-            {detail && (
-              <div ref={detailRef} style={{ borderTop: '1px solid var(--border)', padding: '14px 16px',
-                                            scrollMarginBottom: 24 }}>
-                {detail.loading && <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>loading transactions…</div>}
-                {detail.error && <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--err)' }}>{detail.error}</div>}
-                {detail.data && (
-                  <>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap', marginBottom: 10 }}>
-                      <span style={{ fontWeight: 700, fontSize: 14 }}>{detail.data.label}</span>
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
-                        {detail.data.scope}{detail.data.entity ? ` · ${detail.data.entity}` : ' · all entities'}
-                        {' · '}{detail.data.row_count} transaction{detail.data.row_count === 1 ? '' : 's'}
-                        {detail.data.cc_count > 0 && ` · ${detail.data.cc_count} on credit card`}
-                        {detail.data.truncated && ' · first 500 shown'}
-                      </span>
-                      <span style={{ flex: 1 }} />
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 700, color: 'var(--ox)' }}>
-                        ${MONEY(detail.data.total)}
-                      </span>
-                      <button className="btn btn-icon" onClick={() => setDetail(null)}
-                              style={{ padding: '2px 10px', fontSize: 10 }}>Close</button>
-                    </div>
-                    <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--mono)', fontSize: 10 }}>
-                      <thead><tr>
-                        <th style={th({ textAlign: 'left', fontSize: 9 })}>DATE</th>
-                        <th style={th({ textAlign: 'left', fontSize: 9 })}>LOCATION</th>
-                        <th style={th({ textAlign: 'left', fontSize: 9 })}>ACCOUNT</th>
-                        <th style={th({ textAlign: 'left', fontSize: 9 })}>CARD / MEMO</th>
-                        <th style={th({ textAlign: 'left', fontSize: 9 })}>DOC #</th>
-                        <th style={th({ fontSize: 9 })}>AMOUNT</th>
-                      </tr></thead>
-                      <tbody>
-                        {detail.data.rows.map((t, i) => (
-                          <tr key={i} style={{ background: i % 2 ? 'transparent' : 'var(--stripe)' }}>
-                            <td style={td({ textAlign: 'left' })}>{t.date}</td>
-                            <td style={td({ textAlign: 'left' })}>{t.location}</td>
-                            <td style={td({ textAlign: 'left' })}>{t.account}</td>
-                            <td style={td({ textAlign: 'left', maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })}>
-                              {t.is_cc && (
-                                <span style={{ color: 'var(--ox)', border: '1px solid var(--ox-b)',
-                                               borderRadius: 2, padding: '0 4px', marginRight: 6, fontSize: 9 }}>
-                                  💳 {t.cardholder || 'card'}
-                                </span>
-                              )}
-                              {t.memo}
-                            </td>
-                            <td style={td({ textAlign: 'left' })}>{t.doc}</td>
-                            <td style={td({ color: t.amount < 0 ? 'var(--err)' : undefined })}>{MONEY(t.amount)}</td>
-                          </tr>
-                        ))}
-                        <tr style={{ borderTop: '1px solid var(--border)' }}>
-                          <td colSpan={5} style={td({ textAlign: 'left', fontWeight: 700 })}>TOTAL</td>
-                          <td style={td({ fontWeight: 700 })}>{MONEY(detail.data.total)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </>
-                )}
-              </div>
-            )}
           </div>
         </>
       )}
 
       {data?.error && <div style={{ color: 'var(--err)', fontFamily: 'var(--mono)', fontSize: 12 }}>{data.error}</div>}
+
+      {win && <DetailWindow key={win._k} req={win} onClose={() => setWin(null)} />}
     </div>
   )
 }
 
+const payChip = (fg, bd) => ({
+  fontFamily: 'var(--mono)', fontSize: 9, whiteSpace: 'nowrap',
+  color: fg, border: `1px solid ${bd}`, borderRadius: 2, padding: '1px 5px',
+})
 const lbl = { fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)',
               textTransform: 'uppercase', letterSpacing: '0.1em', marginRight: 6 }
 const sel = { fontFamily: 'var(--mono)', fontSize: 11, padding: '4px 8px',
