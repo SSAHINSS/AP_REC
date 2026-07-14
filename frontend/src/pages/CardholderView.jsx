@@ -104,7 +104,7 @@ export default function CardholderView({ openDetail }) {
       {data && (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontWeight: 600, fontSize: 14 }}>Credit-Card Spend by Cardholder</span>
+            <span style={{ fontWeight: 600, fontSize: 14 }}>Credit Card Expenses</span>
             <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>
               {data.rows.length} cardholders · CC only, no AP · click any amount for transactions
             </span>

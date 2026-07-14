@@ -21,7 +21,7 @@ const DETAIL_COLS = [
 function SliceTable({ slice }) {
   const { sorted, clickSort, arrow } = useSort(slice.rows || [], DETAIL_COLS)
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, flex: 1 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '6px 4px', flexWrap: 'wrap' }}>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700 }}>
           {slice.comparison_label || 'This period'}
@@ -35,15 +35,16 @@ function SliceTable({ slice }) {
           ${MONEY(slice.total)}
         </span>
       </div>
-      <div style={{ overflow: 'auto', flex: 1 }}>
-        <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--mono)', fontSize: 10 }}>
+      <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
+        <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', fontFamily: 'var(--mono)', fontSize: 10 }}>
           <thead><tr>
             {DETAIL_COLS.map(c => (
               <th key={c.key} onClick={() => clickSort(c.key)}
-                  style={{ padding: '4px 6px', textAlign: c.type === 'num' ? 'right' : 'left',
+                  style={{ padding: '6px 6px', textAlign: c.type === 'num' ? 'right' : 'left',
                            fontSize: 9, color: 'var(--muted)', cursor: 'pointer', userSelect: 'none',
-                           position: 'sticky', top: 0, background: 'var(--surface)',
-                           borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>
+                           position: 'sticky', top: 0, zIndex: 5, background: 'var(--surface)',
+                           boxShadow: '0 1px 0 var(--border), 0 2px 4px rgba(0,0,0,0.12)',
+                           whiteSpace: 'nowrap' }}>
                 {c.label}{arrow(c.key)}
               </th>
             ))}
@@ -93,8 +94,13 @@ export default function DetailWindow({ req, onClose }) {
   const [minimized, setMinimized] = useState(false)
   const [maximized, setMaximized] = useState(false)
 
-  const [pos, setPos]   = useState({ x: Math.max(24, window.innerWidth / 2 - 590), y: 90 })
-  const [size, setSize] = useState({ w: 1180, h: 680 })
+  const initW = Math.min(1180, window.innerWidth - 48)
+  const initH = Math.min(680, window.innerHeight - 80)
+  const [size, setSize] = useState({ w: initW, h: initH })
+  const [pos, setPos]   = useState({
+    x: Math.max(24, (window.innerWidth - initW) / 2),
+    y: Math.max(24, (window.innerHeight - initH) / 2),   // centered in the CURRENT view
+  })
   const drag = useRef(null)
 
   async function fetchDetail(cmps = comparisons) {
@@ -209,11 +215,11 @@ export default function DetailWindow({ req, onClose }) {
           )}
 
           {/* Body: side-by-side slices */}
-          <div style={{ flex: 1, overflow: 'auto', padding: 10, display: 'flex', gap: 12 }}>
+          <div style={{ flex: 1, overflow: 'hidden', padding: 10, display: 'flex', gap: 12, minHeight: 0 }}>
             {loading && <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', padding: 10 }}>loading transactions…</div>}
             {error && <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--err)', padding: 10 }}>{error}</div>}
             {!loading && !error && slices.map((s, i) => (
-              <div key={i} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column',
+              <div key={i} style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column',
                                     borderLeft: i > 0 ? '1px solid var(--border)' : 'none',
                                     paddingLeft: i > 0 ? 12 : 0 }}>
                 <SliceTable slice={s} />

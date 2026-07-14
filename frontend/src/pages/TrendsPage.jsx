@@ -189,7 +189,7 @@ export default function TrendsPage() {
 
       <div style={{ display: 'flex', gap: 6 }}>
         <button onClick={() => setMode('trends')} style={modePill(mode === 'trends')}>Expense Trends</button>
-        <button onClick={() => setMode('cards')} style={modePill(mode === 'cards')}>Credit Cards by Cardholder</button>
+        <button onClick={() => setMode('cards')} style={modePill(mode === 'cards')}>Credit Card Expenses</button>
       </div>
 
       {mode === 'cards' && <CardholderView openDetail={setWin} />}
