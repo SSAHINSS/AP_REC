@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useSort } from './useSort'
 import { trendsDetail, cardholderDetail } from '../api'
 
@@ -162,7 +163,7 @@ export default function DetailWindow({ req, onClose }) {
 
   const slices = data ? [data, ...(data.comparisons || [])] : []
 
-  return (
+  return createPortal(
     <div style={{ position: 'fixed', zIndex: 400, ...frame,
                   background: 'var(--surface)', border: '1px solid var(--ox-b)',
                   borderRadius: 6, boxShadow: '0 12px 40px rgba(0,0,0,0.4)',
@@ -243,7 +244,8 @@ export default function DetailWindow({ req, onClose }) {
           )}
         </>
       )}
-    </div>
+    </div>,
+    document.body
   )
 }
 

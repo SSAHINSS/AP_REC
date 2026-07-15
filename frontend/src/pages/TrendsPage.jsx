@@ -304,7 +304,7 @@ export default function TrendsPage() {
                 <thead>
                   <tr>
                     <th onClick={() => clickSort('label')}
-                        style={th({ textAlign: 'left', minWidth: 220, position: 'sticky', left: 0, zIndex: 2,
+                        style={th({ textAlign: 'left', minWidth: 220, position: 'sticky', left: 0, top: 0, zIndex: 4,
                                     background: 'var(--surface)', cursor: 'pointer' })}>
                       {view === 'vendor' ? 'VENDOR' : 'ACCOUNT'}{arrow('label')}
                     </th>
@@ -321,10 +321,10 @@ export default function TrendsPage() {
                       </th>
                     ))}
                     <th onClick={() => clickSort('total')}
-                        style={th({ position: 'sticky', right: 130, zIndex: 2, background: 'var(--surface)', cursor: 'pointer' })}>
+                        style={th({ position: 'sticky', right: 130, top: 0, zIndex: 4, background: 'var(--surface)', cursor: 'pointer' })}>
                       TOTAL{arrow('total')}
                     </th>
-                    <th style={th({ textAlign: 'left', position: 'sticky', right: 0, zIndex: 2, background: 'var(--surface)', width: 130, minWidth: 130 })}>FLAG</th>
+                    <th style={th({ textAlign: 'left', position: 'sticky', right: 0, top: 0, zIndex: 4, background: 'var(--surface)', width: 130, minWidth: 130 })}>FLAG</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -417,7 +417,10 @@ const th = extra => ({
   padding: '8px 8px', textAlign: 'right', fontWeight: 600, fontSize: 10,
   letterSpacing: '0.06em', color: 'var(--muted)',
   borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap',
-  userSelect: 'none', ...extra,
+  userSelect: 'none',
+  position: 'sticky', top: 0, zIndex: 3, background: 'var(--surface)',
+  boxShadow: '0 1px 0 var(--border), 0 3px 6px rgba(0,0,0,0.10)',
+  ...extra,
 })
 const td = extra => ({
   padding: '5px 8px', textAlign: 'right', whiteSpace: 'nowrap', ...extra,

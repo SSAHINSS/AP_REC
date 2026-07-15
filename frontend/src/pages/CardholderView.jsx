@@ -116,13 +116,13 @@ export default function CardholderView({ openDetail }) {
           <div style={{ overflowX: 'auto', borderTop: '1px solid var(--border)' }}>
             <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}>
               <thead><tr>
-                <th onClick={() => clickSort('label')} style={cth({ textAlign: 'left', minWidth: 170, position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 2, cursor: 'pointer' })}>CARDHOLDER{arrow('label')}</th>
+                <th onClick={() => clickSort('label')} style={cth({ textAlign: 'left', minWidth: 170, position: 'sticky', left: 0, top: 0, background: 'var(--surface)', zIndex: 4, cursor: 'pointer' })}>CARDHOLDER{arrow('label')}</th>
                 <th onClick={() => clickSort('entities')} style={cth({ textAlign: 'left', cursor: 'pointer' })}>ENTITIES{arrow('entities')}</th>
                 <th onClick={() => clickSort('txn')} style={cth({ cursor: 'pointer' })}>TXNS{arrow('txn')}</th>
                 {months.map((m, i) => (
                   <th key={m} onClick={() => clickSort('m' + i)} style={cth({ cursor: 'pointer' })}>{monthLabel(m)}{arrow('m' + i)}</th>
                 ))}
-                <th onClick={() => clickSort('total')} style={cth({ position: 'sticky', right: 0, background: 'var(--surface)', zIndex: 2, cursor: 'pointer' })}>TOTAL{arrow('total')}</th>
+                <th onClick={() => clickSort('total')} style={cth({ position: 'sticky', right: 0, top: 0, background: 'var(--surface)', zIndex: 4, cursor: 'pointer' })}>TOTAL{arrow('total')}</th>
               </tr></thead>
               <tbody>
                 {sorted.map((r, ri) => (
@@ -182,5 +182,7 @@ const chip = active => ({
 })
 const cth = extra => ({ padding: '8px 8px', textAlign: 'right', fontWeight: 600, fontSize: 10,
   letterSpacing: '0.06em', color: 'var(--muted)', borderBottom: '1px solid var(--border)',
-  whiteSpace: 'nowrap', userSelect: 'none', ...extra })
+  whiteSpace: 'nowrap', userSelect: 'none',
+  position: 'sticky', top: 0, zIndex: 3, background: 'var(--surface)',
+  boxShadow: '0 1px 0 var(--border), 0 3px 6px rgba(0,0,0,0.10)', ...extra })
 const ctd = extra => ({ padding: '5px 8px', textAlign: 'right', whiteSpace: 'nowrap', ...extra })
