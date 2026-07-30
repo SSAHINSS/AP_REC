@@ -14,7 +14,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-ENGINE_VERSION = "v6.0-layer1-banner"
+ENGINE_VERSION = "v6.1-ocr-bushbros-sourcebooks"
 print(f"[reconciliation_engine] loaded {ENGINE_VERSION}")
 
 # ── Mappings ─────────────────────────────────────────────────────────────────
@@ -130,6 +130,10 @@ def find_statement_total(text):
         (r"^TOTAL\s+\$?([\d,]+\.\d{2})",                                                   "TOTAL"),
         (r"Total:\s+([\d,]+\.\d{2})\s*$",                                                  "Total: EOL"),
         (r"Amount\s+Due\s*\n\s*\$?([\d,]+\.\d{2})",                                     "Amount Due newline"),
+        # Bush Brothers: "Total Due $13,836.67" in a bordered box (may have spacing)
+        (r"Total\s+Due\s+\$?([\d,]+\.\d{2})",                                              "Total Due box"),
+        # Source Books: "Total $ 1,008.50" (space after $, no colon)
+        (r"Total\s+\$\s*([\d,]+\.\d{2})",                                                  "Total $ amount"),
         # NEW: end-of-document grand totals (US Paper "TOTAL $X $X", CW "BALANCE DUE 13,450.33")
         (r"^\s*TOTAL\s+\$?([\d,]+\.\d{2})\s+\$?[\d,]+\.\d{2}\s*$",                         "Grand TOTAL line"),
         (r"BALANCE\s+DUE\s+\$?([\d,]+\.\d{2})",                                           "BALANCE DUE"),
@@ -237,21 +241,62 @@ def find_section_totals(text):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _pdf(fp):
+    """
+    Extract text. pdfplumber first; if it yields too little (scanned/image PDFs
+    like Auto-Chlor return a garbled sliver, not empty), fall back to OCR.
+    """
+    plumber_text = ""
     try:
         pdf = pdfplumber.open(fp)
-        t = "\n".join(p.extract_text() or "" for p in pdf.pages)
+        n_pages = len(pdf.pages)
+        plumber_text = "\n".join(p.extract_text() or "" for p in pdf.pages)
         pdf.close()
-        if t.strip():
-            return t
+    except Exception:
+        n_pages = 1
+
+    # "Enough" text = a reasonable amount per page AND some digits (statements
+    # always have dollar amounts). Auto-Chlor: 111 chars, no digits → OCR.
+    def looks_sufficient(txt):
+        if not txt or not txt.strip():
+            return False
+        digits = sum(c.isdigit() for c in txt)
+        # need at least ~80 chars/page of real content and several numbers
+        return len(txt.strip()) >= max(120, 60 * max(n_pages, 1)) and digits >= 8
+
+    if looks_sufficient(plumber_text):
+        return plumber_text
+
+    # OCR fallback — render pages and Tesseract them. Try PyMuPDF (no poppler
+    # dependency) first, then pdf2image.
+    try:
+        import fitz  # PyMuPDF
+        import pytesseract
+        from PIL import Image
+        import io as _io
+        doc = fitz.open(fp)
+        parts = []
+        for page in doc:
+            pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))  # ~180 dpi
+            img = Image.open(_io.BytesIO(pix.tobytes("png")))
+            parts.append(pytesseract.image_to_string(img))
+        doc.close()
+        ocr_text = "\n".join(parts)
+        if len(ocr_text.strip()) > len(plumber_text.strip()):
+            return ocr_text
     except Exception:
         pass
+
     try:
         from pdf2image import convert_from_path
         import pytesseract
         pages = convert_from_path(fp, dpi=200)
-        return "\n".join(pytesseract.image_to_string(p) for p in pages)
+        ocr_text = "\n".join(pytesseract.image_to_string(p) for p in pages)
+        if len(ocr_text.strip()) > len(plumber_text.strip()):
+            return ocr_text
     except Exception:
-        return ""
+        pass
+
+    return plumber_text
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  UNIVERSAL INVOICE EXTRACTOR
@@ -336,6 +381,48 @@ def parse_generic(t):
             if m and not looks_like_amount(m.group(1)):
                 v = clean_amt(m.group(2))
                 if v: add(m.group(1), -abs(v), typ='Credit Memo', line_idx=i)
+
+    # S3b: Bush Brothers ledger — "DATE Type Reference Customer Original [Applied] Balance"
+    #   "7/2/2026 Invoice 1664645 The Library 1,844.94 1,844.94"
+    #   "5/22/2026 Credit Memo 1656702 The Library -191.62 -191.62"
+    #   "5/8/2026 Invoice 1653169 The Library 2,462.57 2,147.19 315.38"  (Applied present)
+    # Use the "Original" amount (first amount after the customer name) as the invoice value.
+    BUSH_PAT = re.compile(
+        rf'^\s*({DATE})\s+(Invoice|Credit\s*Memo|Payment)\s+(\d{{4,}})\s+'
+        r'.+?\s+(-?[\d,]+\.\d{2})(?:\s+-?[\d,]+\.\d{2}){0,2}\s*$', re.M | re.I)
+    for m in BUSH_PAT.finditer(t):
+        line_no = t[:m.start()].count('\n')
+        if line_no in inv_lines:
+            continue
+        tw = m.group(2).lower()
+        v = clean_amt(m.group(4))
+        if v is None:
+            continue
+        if 'payment' in tw:
+            typ = 'Payment'; v = -abs(v)
+        elif 'credit' in tw:
+            typ = 'Credit Memo'; v = -abs(v)
+        else:
+            typ = 'Invoice'
+        add(m.group(3), v, date=m.group(1), typ=typ, line_idx=line_no)
+
+    # S3c: Source Books — "IN/CN <invoice> <ref> <postdate> <duedate> <details> <amount> <balance>"
+    #   "IN 7245606 149 06/29/26 07/29/26 A/R Invoices - C143050 174.41 148.92"
+    #   "CN 5376433 149,PO132 07/08/26 08/07/26 A/R Credit Memos - -25.49 -25.49"
+    # The invoice AMOUNT is the second-to-last number; balance is last.
+    SRCBK_PAT = re.compile(
+        r'^\s*(IN|CN)\s+(\d{5,})\s+.*?\s+(-?[\d,]+\.\d{2})\s+(-?[\d,]+\.\d{2})\s*$', re.M | re.I)
+    for m in SRCBK_PAT.finditer(t):
+        line_no = t[:m.start()].count('\n')
+        if line_no in inv_lines:
+            continue
+        v = clean_amt(m.group(3))
+        if v is None:
+            continue
+        typ = 'Credit Memo' if m.group(1).upper() == 'CN' else 'Invoice'
+        if typ == 'Credit Memo':
+            v = -abs(v)
+        add(m.group(2), v, date='', typ=typ, line_idx=line_no)
 
     # S3: US Paper — DATE Invoice/Credit_Memo NUMBER DATE AMOUNT
     USP_PAT = re.compile(
