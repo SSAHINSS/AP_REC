@@ -77,7 +77,6 @@ export default function AccrualPage() {
   }
 
   async function toggleRow(g, label, payType) {
-    if (payType === 'cc') return
     const k = rowKey(g, label)
     const cur = rows[k]
     let next
@@ -145,7 +144,7 @@ export default function AccrualPage() {
       <div className="card" style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
         <b style={{ color: 'var(--warn)' }}>EXPERIMENTAL</b> — review AP spend, check the vendors to
         accrue, enter amounts, and export a Sage-ready JE import CSV. Uses the same GL as Expense
-        Trends. Credit-card lines can't be accrued (already paid). Your work autosaves per
+        Trends. Credit-card spend is excluded entirely (already paid — nothing to accrue). Your work autosaves per
         entity + month.
       </div>
 
@@ -219,7 +218,10 @@ export default function AccrualPage() {
                 <th style={th({ textAlign: 'left', minWidth: 330 })}>ACCRUE — CHECK &amp; ENTER $</th>
               </tr></thead>
               <tbody>
-                {data.groups.map(g => (
+                {data.groups.map(g => {
+                  const visRows = g.rows.filter(r => r.pay_type !== 'cc')
+                  if (!visRows.length) return null
+                  return (
                   <>
                   <tr key={g.name}>
                     <td colSpan={7 + showMonths.length - 2}
@@ -229,10 +231,9 @@ export default function AccrualPage() {
                       {g.name}
                     </td>
                   </tr>
-                  {g.rows.map((r, ri) => {
+                  {visRows.map((r, ri) => {
                     const k = rowKey(g.name, r.label)
                     const st = rows[k]
-                    const isCC = r.pay_type === 'cc'
                     const isBlank = String(r.label).toLowerCase() === '(blank)'
                     const aIdx = months.length - 2
                     return (
@@ -242,9 +243,9 @@ export default function AccrualPage() {
                         <td style={td({ textAlign: 'left' })}>{r.label}</td>
                         <td style={td({ textAlign: 'left' })}>
                           <span style={{ fontSize: 9, padding: '0 4px', borderRadius: 2,
-                                         color: isCC ? 'var(--ox)' : r.pay_type === 'mixed' ? 'var(--warn)' : 'var(--muted)',
+                                         color: r.pay_type === 'mixed' ? 'var(--warn)' : 'var(--muted)',
                                          border: '1px solid var(--border)' }}>
-                            {isCC ? 'CC' : r.pay_type === 'mixed' ? 'MIX' : 'AP'}
+                            {r.pay_type === 'mixed' ? 'MIX' : 'AP'}
                           </span>
                         </td>
                         {showMonths.map(i => (
@@ -268,10 +269,10 @@ export default function AccrualPage() {
                             </span>
                           ) : (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <input type="checkbox" checked={!!st?.on} disabled={isCC}
-                                   title={isCC ? 'Credit-card spend is already paid — nothing to accrue' : 'Accrue this vendor'}
+                            <input type="checkbox" checked={!!st?.on}
+                                   title="Accrue this vendor"
                                    onChange={() => toggleRow(g.name, r.label, r.pay_type)}
-                                   style={{ cursor: isCC ? 'not-allowed' : 'pointer' }} />
+                                   style={{ cursor: 'pointer' }} />
                             {st?.on && (
                               <>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -304,7 +305,8 @@ export default function AccrualPage() {
                     )
                   })}
                   </>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
