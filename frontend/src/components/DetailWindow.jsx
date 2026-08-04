@@ -8,7 +8,7 @@ const MONEY = v =>
   : v < 0 ? `(${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 2 })})`
   : v.toLocaleString(undefined, { maximumFractionDigits: 2 })
 
-const DETAIL_COLS = [
+const BASE_COLS = [
   { key: 'date',       label: 'DATE',        type: 'str', get: r => r.date },
   { key: 'location',   label: 'LOCATION',    type: 'str', get: r => r.location },
   { key: 'pay',        label: 'TYPE',        type: 'str', get: r => (r.is_cc ? 'CC' : 'AP') },
@@ -18,9 +18,15 @@ const DETAIL_COLS = [
   { key: 'doc',        label: 'DOC #',       type: 'str', get: r => r.doc },
   { key: 'amount',     label: 'AMOUNT',      type: 'num', get: r => r.amount },
 ]
+// Cardholder drill-down: the person is in the title, so that column is
+// redundant — show WHO WAS PAID instead. Sortable like everything else.
+const CARDHOLDER_COLS = BASE_COLS.map(c =>
+  c.key === 'cardholder'
+    ? { key: 'vendor', label: 'VENDOR', type: 'str', get: r => r.vendor }
+    : c)
 
-function SliceTable({ slice }) {
-  const { sorted, clickSort, arrow } = useSort(slice.rows || [], DETAIL_COLS)
+function SliceTable({ slice, cols = BASE_COLS }) {
+  const { sorted, clickSort, arrow } = useSort(slice.rows || [], cols)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, flex: 1 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '6px 4px', flexWrap: 'wrap' }}>
@@ -39,7 +45,7 @@ function SliceTable({ slice }) {
       <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
         <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', fontFamily: 'var(--mono)', fontSize: 10 }}>
           <thead><tr>
-            {DETAIL_COLS.map(c => (
+            {cols.map(c => (
               <th key={c.key} onClick={() => clickSort(c.key)}
                   style={{ padding: '6px 6px', textAlign: c.type === 'num' ? 'right' : 'left',
                            fontSize: 9, color: 'var(--muted)', cursor: 'pointer', userSelect: 'none',
@@ -53,24 +59,29 @@ function SliceTable({ slice }) {
           <tbody>
             {sorted.map((t, i) => (
               <tr key={i} style={{ background: i % 2 ? 'transparent' : 'var(--stripe)' }}>
-                <td style={dtd()} title={t.date}>{t.date}</td>
-                <td style={dtd()} title={t.location}>{t.location}</td>
-                <td style={dtd()}>
-                  <span style={{ fontSize: 9, padding: '0 4px', borderRadius: 2,
-                                 color: t.is_cc ? 'var(--ox)' : 'var(--muted)',
-                                 border: `1px solid ${t.is_cc ? 'var(--ox-b)' : 'var(--border)'}` }}>
-                    {t.is_cc ? '💳 CC' : 'AP'}
-                  </span>
-                </td>
-                <td style={dtd({ whiteSpace: 'normal', maxWidth: 240, wordBreak: 'break-word' })} title={t.account}>{t.account}</td>
-                <td style={dtd({ whiteSpace: 'normal', maxWidth: 130, wordBreak: 'break-word' })} title={t.cardholder}>{t.cardholder}</td>
-                <td style={dtd({ whiteSpace: 'normal', maxWidth: 300, wordBreak: 'break-word' })} title={t.memo}>{t.memo}</td>
-                <td style={dtd({ whiteSpace: 'normal', maxWidth: 120, wordBreak: 'break-word' })} title={t.doc}>{t.doc}</td>
-                <td style={dtd({ textAlign: 'right', color: t.amount < 0 ? 'var(--err)' : undefined })}>{MONEY(t.amount)}</td>
+                {cols.map(c => {
+                  if (c.key === 'pay') return (
+                    <td key={c.key} style={dtd()}>
+                      <span style={{ fontSize: 9, padding: '0 4px', borderRadius: 2,
+                                     color: t.is_cc ? 'var(--ox)' : 'var(--muted)',
+                                     border: `1px solid ${t.is_cc ? 'var(--ox-b)' : 'var(--border)'}` }}>
+                        {t.is_cc ? '💳 CC' : 'AP'}
+                      </span>
+                    </td>)
+                  if (c.key === 'amount') return (
+                    <td key={c.key} style={dtd({ textAlign: 'right', color: t.amount < 0 ? 'var(--err)' : undefined })}>{MONEY(t.amount)}</td>)
+                  const widths = { account: 240, cardholder: 130, vendor: 180, memo: 300, doc: 120 }
+                  const v = c.get(t)
+                  const w = widths[c.key]
+                  return (
+                    <td key={c.key}
+                        style={dtd(w ? { whiteSpace: 'normal', maxWidth: w, wordBreak: 'break-word' } : {})}
+                        title={String(v ?? '')}>{v}</td>)
+                })}
               </tr>
             ))}
             <tr style={{ borderTop: '1px solid var(--border)' }}>
-              <td colSpan={7} style={dtd({ fontWeight: 700 })}>TOTAL — {slice.row_count} txns</td>
+              <td colSpan={cols.length - 1} style={dtd({ fontWeight: 700 })}>TOTAL — {slice.row_count} txns</td>
               <td style={dtd({ textAlign: 'right', fontWeight: 700 })}>{MONEY(slice.total)}</td>
             </tr>
           </tbody>
@@ -223,7 +234,7 @@ export default function DetailWindow({ req, onClose }) {
               <div key={i} style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column',
                                     borderLeft: i > 0 ? '1px solid var(--border)' : 'none',
                                     paddingLeft: i > 0 ? 12 : 0 }}>
-                <SliceTable slice={s} />
+                <SliceTable slice={s} cols={req.kind === 'cardholder' ? CARDHOLDER_COLS : BASE_COLS} />
               </div>
             ))}
           </div>
