@@ -16,6 +16,18 @@ function monthLabel(m) {
 }
 const rowKey = (g, l) => `${g}::${l}`
 
+// Calculator input: "40*4" → 160. Strict whitelist — digits, + - * / ( ) .
+// only — then evaluated as pure arithmetic. Anything else → NaN.
+function evalAmount(raw) {
+  if (raw == null) return NaN
+  const s = String(raw).replace(/[$,\s]/g, '')
+  if (!s || !/^[0-9+\-*/().]+$/.test(s)) return NaN
+  try {
+    const v = Function('"use strict"; return (' + s + ')')()
+    return typeof v === 'number' && isFinite(v) ? Math.round(v * 100) / 100 : NaN
+  } catch { return NaN }
+}
+
 export default function AccrualPage() {
   const [entity, setEntity]   = useState('')
   const [period, setPeriod]   = useState('')
@@ -107,10 +119,10 @@ export default function AccrualPage() {
   }
 
   const activeLines = Object.entries(rows)
-    .filter(([, r]) => r.on && parseFloat(r.amount) > 0)
+    .filter(([, r]) => r.on && evalAmount(r.amount) > 0)
     .map(([k, r]) => {
       const [group, label] = k.split('::')
-      return { label, group, amount: parseFloat(r.amount),
+      return { label, group, amount: evalAmount(r.amount),
                acct_no: r.acct, location_id: r.loc }
     })
   const accrualTotal = activeLines.reduce((s, l) => s + l.amount, 0)
@@ -203,7 +215,7 @@ export default function AccrualPage() {
       {data && !data.error && entity && (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '12px 16px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
-            3 · Check a vendor, enter the accrual amount. The debit account and location are set
+            3 · Check a vendor, enter the accrual amount (quick math works: 40*4 → 160). The debit account and location are set
             automatically from that vendor's history in this entity. Click any month number to see
             the transactions behind it.
           </div>
@@ -277,9 +289,21 @@ export default function AccrualPage() {
                               <>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                   <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>$</span>
-                                  <input type="number" placeholder="0.00" value={st.amount} autoFocus
+                                  <input type="text" inputMode="decimal" placeholder="0.00 or 40*4"
+                                         value={st.amount} autoFocus
+                                         title="Type a number or quick math (40*4, (1200+80)/2) — Enter computes it"
                                          onChange={e => setField(k, 'amount', e.target.value)}
-                                         style={inp(100)} />
+                                         onKeyDown={e => {
+                                           if (e.key === 'Enter') {
+                                             const v = evalAmount(st.amount)
+                                             if (!isNaN(v)) setField(k, 'amount', String(v))
+                                           }
+                                         }}
+                                         onBlur={() => {
+                                           const v = evalAmount(st.amount)
+                                           if (!isNaN(v) && String(v) !== String(st.amount)) setField(k, 'amount', String(v))
+                                         }}
+                                         style={inp(110)} />
                                 </span>
                                 <span title="Debit account and Sage location — set automatically from this vendor's posting history in the selected entity"
                                       style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)',
