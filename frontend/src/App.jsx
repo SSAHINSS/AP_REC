@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { isLoggedIn, logout, isAdmin, listUsers, createUser, deleteUser, updateUser, getPerms } from './api'
 import LoginPage from './pages/LoginPage'
 import HomePage from './pages/HomePage'
@@ -284,13 +284,21 @@ function UsersModal({ onClose }) {
     } catch (e) { setErr(e.message) }
   }
 
+  // Close ONLY via the Close button or Escape — stray clicks (or releasing a
+  // text-selection outside the card) must never dismiss the panel mid-edit.
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   return (
-    <div onClick={onClose} style={{
+    <div style={{
       position: 'fixed', inset: 0, zIndex: 300,
       background: 'rgba(0,0,0,0.55)', display: 'flex',
       alignItems: 'center', justifyContent: 'center', padding: 24,
     }}>
-      <div onClick={e => e.stopPropagation()} className="card"
+      <div className="card"
            style={{ width: '100%', maxWidth: 860, maxHeight: '86vh', overflow: 'auto',
                     background: 'var(--surface)',
                     border: '1px solid var(--border)', borderRadius: 6, padding: 20 }}>
@@ -312,8 +320,8 @@ function UsersModal({ onClose }) {
           </tr></thead>
           <tbody>
             {users.map((u, i) => (
-              <>
-              <tr key={u.id} style={{ background: i % 2 ? 'transparent' : 'var(--stripe)' }}>
+              <Fragment key={u.id}>
+              <tr style={{ background: i % 2 ? 'transparent' : 'var(--stripe)' }}>
                 <td style={utd({ textAlign: 'left' })}>
                   {u.email}
                   {u.created_at && <div style={{ fontSize: 9, color: 'var(--muted)' }}>
@@ -344,7 +352,7 @@ function UsersModal({ onClose }) {
                 </td>
               </tr>
               {resetFor === u.id && (
-                <tr key={u.id + ':reset'}>
+                <tr>
                   <td colSpan={MODULE_DEFS.length + 3} style={{ padding: '6px 8px' }}>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       <div className="input-wrap" style={{ flex: 1, maxWidth: 320 }}>
@@ -359,7 +367,7 @@ function UsersModal({ onClose }) {
                   </td>
                 </tr>
               )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
