@@ -41,6 +41,8 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
+    # Comma-separated module permissions: aprec,filenamer,trends,payroll
+    permissions = Column(String(255), default="aprec,filenamer,trends,payroll")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -56,6 +58,23 @@ class GLFile(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    # Defensive migration: create_all doesn't ALTER existing tables, so add
+    # the permissions column to a pre-existing users table if it's missing.
+    from sqlalchemy import text
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN permissions VARCHAR(255) "
+                "DEFAULT 'aprec,filenamer,trends,payroll'"))
+    except Exception:
+        pass  # column already exists
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "UPDATE users SET permissions = 'aprec,filenamer,trends,payroll' "
+                "WHERE permissions IS NULL"))
+    except Exception:
+        pass
 
 
 def get_session():

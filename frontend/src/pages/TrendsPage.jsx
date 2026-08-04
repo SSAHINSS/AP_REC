@@ -217,11 +217,7 @@ export default function TrendsPage() {
               ))}
             </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={lbl}>View</span>
-              <button onClick={() => pickView('vendor')}  style={pill(view === 'vendor')}>By Vendor</button>
-              <button onClick={() => pickView('account')} style={pill(view === 'account')}>By GL Account</button>
-
-              <span style={{ ...lbl, margin: '0 6px 0 18px' }}>Analysis Month</span>
+              <span style={lbl}>Analysis Month</span>
               <select value={data.period || ''} onChange={e => pickPeriod(e.target.value)} style={sel}>
                 {(data.available_months || []).slice().reverse().map(m => (
                   <option key={m} value={m}>{m}</option>

@@ -89,6 +89,28 @@ def require_auth(
     return user
 
 
+MODULES = ("aprec", "filenamer", "trends", "payroll")
+
+
+def _perms(user: User):
+    """Admins get everything; others get their stored list (default: all)."""
+    if user.is_admin:
+        return list(MODULES)
+    raw = getattr(user, "permissions", None)
+    if raw is None or raw == "":
+        return list(MODULES)
+    return [p for p in raw.split(",") if p in MODULES]
+
+
+def require_module(mod: str):
+    def _dep(user: User = Depends(require_auth)) -> User:
+        if mod not in _perms(user):
+            raise HTTPException(status_code=403,
+                                detail=f"Your account doesn't have access to this module")
+        return user
+    return _dep
+
+
 def require_admin(user: User = Depends(require_auth)) -> User:
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Admin only")
@@ -98,16 +120,31 @@ def require_admin(user: User = Depends(require_auth)) -> User:
 @app.on_event("startup")
 def _startup():
     init_db()
-    # Bootstrap the first admin if no users exist
+    # Bootstrap/sync the admin account. The password hash is kept in sync with
+    # the ADMIN_PASSWORD (or APP_PASSWORD) variable on EVERY boot, so rotating
+    # the variable in Railway rotates the admin login — critical because the
+    # legacy value was the old shared team password.
     db = SessionLocal()
     try:
-        if db.query(User).count() == 0:
+        admin = db.query(User).filter(User.email == ADMIN_EMAIL.lower().strip()).first()
+        if admin is None:
             db.add(User(email=ADMIN_EMAIL.lower().strip(),
                         password_hash=_hash_pw(ADMIN_PASSWORD),
                         is_admin=True))
             db.commit()
+        else:
+            changed = False
+            if not _verify_pw(ADMIN_PASSWORD, admin.password_hash):
+                admin.password_hash = _hash_pw(ADMIN_PASSWORD)
+                changed = True
+            if not admin.is_admin:
+                admin.is_admin = True
+                changed = True
+            if changed:
+                db.commit()
     finally:
         db.close()
+
 
 
 UPLOAD_DIR = Path(tempfile.mkdtemp())
@@ -126,17 +163,19 @@ def auth(body: dict, db: Session = Depends(get_session)):
     user = db.query(User).filter(User.email == email).first()
     if not user or not _verify_pw(password, user.password_hash):
         raise HTTPException(status_code=401, detail="Wrong email or password")
-    return {"token": _make_token(user), "email": user.email, "is_admin": user.is_admin}
+    return {"token": _make_token(user), "email": user.email, "is_admin": user.is_admin,
+            "permissions": _perms(user)}
 
 
 @app.get("/me")
 def me(user: User = Depends(require_auth)):
-    return {"email": user.email, "is_admin": user.is_admin}
+    return {"email": user.email, "is_admin": user.is_admin, "permissions": _perms(user)}
 
 # ── User management (admin only) ────────────────────────────────────────────
 @app.get("/users")
 def list_users(admin: User = Depends(require_admin), db: Session = Depends(get_session)):
-    return [{"id": u.id, "email": u.email, "is_admin": u.is_admin}
+    return [{"id": u.id, "email": u.email, "is_admin": u.is_admin,
+             "permissions": _perms(u), "created_at": _iso_utc(u.created_at)}
             for u in db.query(User).order_by(User.id).all()]
 
 
@@ -151,10 +190,41 @@ def create_user(body: dict, admin: User = Depends(require_admin),
         raise HTTPException(status_code=422, detail="Password must be at least 6 characters")
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=409, detail="That email already exists")
+    perms = body.get("permissions")
+    if isinstance(perms, list):
+        perms_str = ",".join(p for p in perms if p in MODULES)
+    else:
+        perms_str = ",".join(MODULES)
     u = User(email=email, password_hash=_hash_pw(password),
-             is_admin=bool(body.get("is_admin", False)))
+             is_admin=bool(body.get("is_admin", False)),
+             permissions=perms_str)
     db.add(u); db.commit()
-    return {"id": u.id, "email": u.email, "is_admin": u.is_admin}
+    return {"id": u.id, "email": u.email, "is_admin": u.is_admin, "permissions": _perms(u)}
+
+
+@app.patch("/users/{user_id}")
+def update_user(user_id: int, body: dict, admin: User = Depends(require_admin),
+                db: Session = Depends(get_session)):
+    """Admin management: reset password, set module permissions, toggle admin."""
+    u = db.query(User).filter(User.id == user_id).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if "password" in body and body["password"]:
+        if len(body["password"]) < 6:
+            raise HTTPException(status_code=422, detail="Password must be at least 6 characters")
+        u.password_hash = _hash_pw(body["password"])
+
+    if "permissions" in body and isinstance(body["permissions"], list):
+        u.permissions = ",".join(p for p in body["permissions"] if p in MODULES)
+
+    if "is_admin" in body:
+        if user_id == admin.id and not body["is_admin"]:
+            raise HTTPException(status_code=422, detail="You can't remove your own admin access")
+        u.is_admin = bool(body["is_admin"])
+
+    db.commit()
+    return {"id": u.id, "email": u.email, "is_admin": u.is_admin, "permissions": _perms(u)}
 
 
 @app.delete("/users/{user_id}")
@@ -173,7 +243,7 @@ def delete_user(user_id: int, admin: User = Depends(require_admin),
 async def reconcile(
     gl_file: UploadFile = File(...),
     statements: list[UploadFile] = File(...),
-    user: User = Depends(require_auth),
+    user: User = Depends(require_module("aprec")),
 ):
     job_id = str(uuid.uuid4())
     job_dir = UPLOAD_DIR / job_id
@@ -203,7 +273,7 @@ async def reconcile(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/download/{job_id}")
-def download(job_id: str, user: User = Depends(require_auth)):
+def download(job_id: str, user: User = Depends(require_module("aprec"))):
     out_path = UPLOAD_DIR / job_id / "AP_REC_result.xlsx"
     if not out_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
@@ -217,7 +287,7 @@ def download(job_id: str, user: User = Depends(require_auth)):
 @app.post("/rename/propose")
 async def rename_propose(
     files: list[UploadFile] = File(...),
-    user: User = Depends(require_auth),
+    user: User = Depends(require_module("filenamer")),
 ):
     job_id  = str(uuid.uuid4())
     job_dir = UPLOAD_DIR / job_id
@@ -244,7 +314,7 @@ async def rename_propose(
 async def rename_download(
     job_id: str,
     body: dict,
-    user: User = Depends(require_auth),
+    user: User = Depends(require_module("filenamer")),
 ):
     job_dir = UPLOAD_DIR / job_id
     if not job_dir.exists():
@@ -307,7 +377,7 @@ async def trends_analyze(
     entity: str = Form(""),
     view: str = Form("vendor"),
     period: str = Form(""),
-    user: User = Depends(require_auth),
+    user: User = Depends(require_module("trends")),
     db: Session = Depends(get_session),
 ):
     if view not in ("vendor", "account"):
@@ -350,7 +420,7 @@ async def payroll_accrual_ep(
     month_end: str = Form(...),
     entity: str = Form(""),
     overrides: str = Form("{}"),
-    user: User = Depends(require_auth),
+    user: User = Depends(require_module("payroll")),
     db: Session = Depends(get_session),
 ):
     if gl_file is not None and gl_file.filename:
@@ -383,7 +453,7 @@ async def payroll_accrual_ep(
 async def payroll_trends_ep(
     entity: str = Form(""),
     period: str = Form(""),
-    user: User = Depends(require_auth),
+    user: User = Depends(require_module("payroll")),
     db: Session = Depends(get_session),
 ):
     stored = load_gl(db, user.id)
@@ -412,7 +482,7 @@ async def payroll_detail_ep(
     month_end: str = Form(""),        # rate mode
     schedule: str = Form("cohort1"),  # rate mode
     month: str = Form(""),            # cell mode ("YYYY-MM")
-    user: User = Depends(require_auth),
+    user: User = Depends(require_module("payroll")),
     db: Session = Depends(get_session),
 ):
     stored = load_gl(db, user.id)
@@ -450,7 +520,7 @@ async def trends_detail_ep(
     month: str = Form(""),
     period: str = Form(""),
     comparisons: str = Form(""),
-    user: User = Depends(require_auth),
+    user: User = Depends(require_module("trends")),
     db: Session = Depends(get_session),
 ):
     stored = load_gl(db, user.id)
@@ -479,7 +549,7 @@ async def trends_export_ep(
     entity: str = Form(""),
     view: str = Form("vendor"),
     period: str = Form(""),
-    user: User = Depends(require_auth),
+    user: User = Depends(require_module("trends")),
     db: Session = Depends(get_session),
 ):
     stored = load_gl(db, user.id)
@@ -512,7 +582,7 @@ async def trends_cardholders_ep(
     holders: str = Form(""),       # comma-separated cardholder names
     start: str = Form(""),
     end: str = Form(""),
-    user: User = Depends(require_auth),
+    user: User = Depends(require_module("trends")),
     db: Session = Depends(get_session),
 ):
     stored = load_gl(db, user.id)
@@ -541,7 +611,7 @@ async def trends_cardholder_detail_ep(
     entities: str = Form(""),
     start: str = Form(""),
     end: str = Form(""),
-    user: User = Depends(require_auth),
+    user: User = Depends(require_module("trends")),
     db: Session = Depends(get_session),
 ):
     stored = load_gl(db, user.id)

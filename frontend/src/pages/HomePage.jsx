@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { glStatus, uploadGl, healthCheck } from '../api'
+import { glStatus, uploadGl, healthCheck, getPerms } from '../api'
 import DropZone from '../components/DropZone'
 
 function monthLabel(m) {
@@ -66,7 +66,7 @@ export default function HomePage({ go }) {
 
       {/* Module launcher — the main event */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 16 }}>
-        {MODULES.map(m => {
+        {MODULES.filter(m => getPerms().includes(m.id)).map(m => {
           const locked = m.needsGl && !stored
           return (
             <button key={m.id} onClick={() => go(m.id)}

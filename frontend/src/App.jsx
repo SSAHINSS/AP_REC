@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { isLoggedIn, logout, isAdmin, listUsers, createUser, deleteUser } from './api'
+import { isLoggedIn, logout, isAdmin, listUsers, createUser, deleteUser, updateUser, getPerms } from './api'
 import LoginPage from './pages/LoginPage'
 import HomePage from './pages/HomePage'
 import AppPage from './pages/AppPage'
@@ -69,7 +69,6 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
               opacity: 0,
             }}>
               <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)', margin: 0 }}>AP Rec Site</p>
-              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 400, color: 'var(--muted)', margin: 0 }}>upload once · analyze everywhere</p>
             </div>
           </div>
         )}
@@ -97,7 +96,6 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
               opacity: 0,
             }}>
               <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)', margin: 0 }}>AP Reconciliation</p>
-              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 400, color: 'var(--muted)', margin: 0 }}>vendor statement processor</p>
             </div>
           </div>
         )}
@@ -143,7 +141,6 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
               opacity: 0,
             }}>
               <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)', margin: 0 }}>Expense Trends</p>
-              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 400, color: 'var(--muted)', margin: 0 }}>vendors · credit cards · flags</p>
             </div>
           </div>
         )}
@@ -169,7 +166,6 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
               opacity: 0,
             }}>
               <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)', margin: 0 }}>Payroll</p>
-              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 400, color: 'var(--muted)', margin: 0 }}>accruals · trends</p>
             </div>
           </div>
         )}
@@ -195,7 +191,6 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
               opacity: 0,
             }}>
               <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)', margin: 0 }}>File Namer</p>
-              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 400, color: 'var(--muted)', margin: 0 }}>vendor file renaming</p>
             </div>
           </div>
         )}
@@ -224,7 +219,6 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
             Users
           </button>
         )}
-        <span className="badge">Authenticated</span>
         <button
           className="btn btn-icon"
           onClick={() => { logout(); onLogout() }}
@@ -238,28 +232,56 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
   )
 }
 
+const MODULE_DEFS = [
+  { id: 'aprec',     label: 'AP Rec' },
+  { id: 'filenamer', label: 'File Namer' },
+  { id: 'trends',    label: 'Expense Trends' },
+  { id: 'payroll',   label: 'Payroll' },
+]
+
 function UsersModal({ onClose }) {
   const [users, setUsers] = useState([])
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [makeAdmin, setMakeAdmin] = useState(false)
+  const [newPerms, setNewPerms] = useState(MODULE_DEFS.map(m => m.id))
+  const [resetFor, setResetFor] = useState(null)   // user id with reset row open
+  const [resetPw, setResetPw] = useState('')
   const [err, setErr] = useState('')
+  const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
 
   const refresh = () => listUsers().then(setUsers).catch(e => setErr(e.message))
   useEffect(() => { refresh() }, [])
 
   async function add() {
-    setErr(''); setBusy(true)
+    setErr(''); setMsg(''); setBusy(true)
     try {
-      await createUser(email.trim(), password, makeAdmin)
-      setEmail(''); setPassword(''); setMakeAdmin(false)
+      await createUser(email.trim(), password, makeAdmin, newPerms)
+      setEmail(''); setPassword(''); setMakeAdmin(false); setNewPerms(MODULE_DEFS.map(m => m.id))
       refresh()
     } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
   async function remove(id) {
-    setErr('')
+    if (!window.confirm('Remove this user? Their saved GL is deleted too.')) return
+    setErr(''); setMsg('')
     try { await deleteUser(id); refresh() } catch (e) { setErr(e.message) }
+  }
+  async function togglePerm(u, mod) {
+    setErr(''); setMsg('')
+    const next = u.permissions.includes(mod)
+      ? u.permissions.filter(p => p !== mod)
+      : [...u.permissions, mod]
+    try { await updateUser(u.id, { permissions: next }); refresh() }
+    catch (e) { setErr(e.message) }
+  }
+  async function doReset(u) {
+    setErr(''); setMsg('')
+    try {
+      await updateUser(u.id, { password: resetPw })
+      setMsg(`Password reset for ${u.email}`)
+      setResetFor(null); setResetPw('')
+    } catch (e) { setErr(e.message) }
   }
 
   return (
@@ -269,46 +291,120 @@ function UsersModal({ onClose }) {
       alignItems: 'center', justifyContent: 'center', padding: 24,
     }}>
       <div onClick={e => e.stopPropagation()} className="card"
-           style={{ width: '100%', maxWidth: 460, background: 'var(--surface)',
+           style={{ width: '100%', maxWidth: 860, maxHeight: '86vh', overflow: 'auto',
+                    background: 'var(--surface)',
                     border: '1px solid var(--border)', borderRadius: 6, padding: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
           <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ox)',
-                         letterSpacing: '0.1em', textTransform: 'uppercase' }}>Users</span>
+                         letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+            User Management — {users.length} active
+          </span>
           <span style={{ flex: 1 }} />
           <button className="btn btn-icon" onClick={onClose} style={{ padding: '2px 10px', fontSize: 10 }}>Close</button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
-          {users.map(u => (
-            <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8,
-                                     fontFamily: 'var(--mono)', fontSize: 12 }}>
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</span>
-              {u.is_admin && <span style={{ fontSize: 9, color: 'var(--ox)' }}>ADMIN</span>}
-              <button className="btn btn-icon" onClick={() => remove(u.id)}
-                      style={{ padding: '1px 8px', fontSize: 10 }}>remove</button>
-            </div>
-          ))}
-        </div>
+        <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}>
+          <thead><tr>
+            <th style={uth({ textAlign: 'left' })}>USER</th>
+            {MODULE_DEFS.map(m => <th key={m.id} style={uth({})}>{m.label.toUpperCase()}</th>)}
+            <th style={uth({})}>ROLE</th>
+            <th style={uth({})}>ACTIONS</th>
+          </tr></thead>
+          <tbody>
+            {users.map((u, i) => (
+              <>
+              <tr key={u.id} style={{ background: i % 2 ? 'transparent' : 'var(--stripe)' }}>
+                <td style={utd({ textAlign: 'left' })}>
+                  {u.email}
+                  {u.created_at && <div style={{ fontSize: 9, color: 'var(--muted)' }}>
+                    since {new Date(u.created_at).toLocaleDateString()}</div>}
+                </td>
+                {MODULE_DEFS.map(m => (
+                  <td key={m.id} style={utd({})}>
+                    <input type="checkbox"
+                           checked={u.is_admin || u.permissions.includes(m.id)}
+                           disabled={u.is_admin}
+                           title={u.is_admin ? 'Admins always have every module' : `Toggle ${m.label}`}
+                           onChange={() => togglePerm(u, m.id)}
+                           style={{ cursor: u.is_admin ? 'not-allowed' : 'pointer' }} />
+                  </td>
+                ))}
+                <td style={utd({})}>
+                  {u.is_admin
+                    ? <span style={{ color: 'var(--ox)', fontSize: 10 }}>ADMIN</span>
+                    : <span style={{ color: 'var(--muted)', fontSize: 10 }}>user</span>}
+                </td>
+                <td style={utd({ whiteSpace: 'nowrap' })}>
+                  <button className="btn btn-icon" style={{ padding: '1px 8px', fontSize: 10, marginRight: 6 }}
+                          onClick={() => { setResetFor(resetFor === u.id ? null : u.id); setResetPw('') }}>
+                    reset pw
+                  </button>
+                  <button className="btn btn-icon" style={{ padding: '1px 8px', fontSize: 10 }}
+                          onClick={() => remove(u.id)}>remove</button>
+                </td>
+              </tr>
+              {resetFor === u.id && (
+                <tr key={u.id + ':reset'}>
+                  <td colSpan={MODULE_DEFS.length + 3} style={{ padding: '6px 8px' }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <div className="input-wrap" style={{ flex: 1, maxWidth: 320 }}>
+                        <input type="text" placeholder={`new password for ${u.email} (6+ chars)`}
+                               value={resetPw} onChange={e => setResetPw(e.target.value)} />
+                      </div>
+                      <button className="btn btn-primary" disabled={resetPw.length < 6}
+                              onClick={() => doReset(u)} style={{ padding: '4px 14px', fontSize: 11 }}>
+                        Set password
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </>
+            ))}
+          </tbody>
+        </table>
 
-        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14,
+        {msg && <div style={{ color: 'var(--ok)', fontFamily: 'var(--mono)', fontSize: 11, marginTop: 10 }}>{msg}</div>}
+        {err && <div style={{ color: 'var(--err)', fontFamily: 'var(--mono)', fontSize: 11, marginTop: 10 }}>{err}</div>}
+
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 16,
                       display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div className="input-wrap"><input type="email" placeholder="new user email"
-               value={email} onChange={e => setEmail(e.target.value)} /></div>
-          <div className="input-wrap"><input type="text" placeholder="temporary password (6+ chars)"
-               value={password} onChange={e => setPassword(e.target.value)} /></div>
-          <label style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)',
-                          display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
-            <input type="checkbox" checked={makeAdmin} onChange={e => setMakeAdmin(e.target.checked)} />
-            admin (can manage users)
-          </label>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)',
+                         textTransform: 'uppercase', letterSpacing: '0.08em' }}>Add user</span>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div className="input-wrap" style={{ flex: 1, minWidth: 220 }}>
+              <input type="email" placeholder="email"
+                   value={email} onChange={e => setEmail(e.target.value)} /></div>
+            <div className="input-wrap" style={{ flex: 1, minWidth: 200 }}>
+              <input type="text" placeholder="temporary password (6+ chars)"
+                   value={password} onChange={e => setPassword(e.target.value)} /></div>
+          </div>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center',
+                        fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
+            {MODULE_DEFS.map(m => (
+              <label key={m.id} style={{ display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer' }}>
+                <input type="checkbox" checked={makeAdmin || newPerms.includes(m.id)} disabled={makeAdmin}
+                       onChange={() => setNewPerms(p => p.includes(m.id) ? p.filter(x => x !== m.id) : [...p, m.id])} />
+                {m.label}
+              </label>
+            ))}
+            <label style={{ display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer', color: 'var(--ox)' }}>
+              <input type="checkbox" checked={makeAdmin} onChange={e => setMakeAdmin(e.target.checked)} />
+              admin (all modules + manage users)
+            </label>
+          </div>
           <button className="btn btn-primary" disabled={busy || !email || password.length < 6}
-                  onClick={add}>Add user</button>
-          {err && <div style={{ color: 'var(--err)', fontFamily: 'var(--mono)', fontSize: 11 }}>{err}</div>}
+                  onClick={add} style={{ alignSelf: 'flex-start' }}>Add user</button>
         </div>
       </div>
     </div>
   )
 }
+
+const uth = extra => ({ padding: '6px 8px', textAlign: 'center', fontWeight: 600, fontSize: 9,
+  letterSpacing: '0.06em', color: 'var(--muted)', borderBottom: '1px solid var(--border)',
+  whiteSpace: 'nowrap', ...extra })
+const utd = extra => ({ padding: '6px 8px', textAlign: 'center', ...extra })
 
 export default function App() {
   const [authed,  setAuthed]  = useState(isLoggedIn)

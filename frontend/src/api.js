@@ -27,6 +27,7 @@ export async function login(email, password) {
   localStorage.setItem('ap_token', data.token)
   localStorage.setItem('ap_email', data.email)
   localStorage.setItem('ap_is_admin', data.is_admin ? '1' : '')
+  localStorage.setItem('ap_perms', JSON.stringify(data.permissions || []))
   return data
 }
 
@@ -34,6 +35,7 @@ export function logout() {
   localStorage.removeItem('ap_token')
   localStorage.removeItem('ap_email')
   localStorage.removeItem('ap_is_admin')
+  localStorage.removeItem('ap_perms')
 }
 
 export function isLoggedIn() {
@@ -63,7 +65,7 @@ async function authedJson(path, opts = {}) {
 // ── User management (admin) ──
 export function listUsers()            { return authedJson('/users') }
 export function createUser(email, password, isAdminFlag = false) {
-  return authedJson('/users', { method: 'POST', body: JSON.stringify({ email, password, is_admin: isAdminFlag }) })
+  return authedJson('/users', { method: 'POST', body: JSON.stringify({ email, password, is_admin: isAdminFlag, permissions }) })
 }
 export function deleteUser(id)         { return authedJson(`/users/${id}`, { method: 'DELETE' }) }
 
@@ -279,5 +281,27 @@ export async function cardholderDetail({ holder, entities = [], start = '', end 
   })
   checkAuth(res)
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Cardholder detail failed')
+  return res.json()
+}
+
+export function getPerms() {
+  if (isAdmin()) return ['aprec', 'filenamer', 'trends', 'payroll']
+  try {
+    const p = JSON.parse(localStorage.getItem('ap_perms') || 'null')
+    return Array.isArray(p) && p.length ? p : ['aprec', 'filenamer', 'trends', 'payroll']
+  } catch { return ['aprec', 'filenamer', 'trends', 'payroll'] }
+}
+
+export async function updateUser(id, body) {
+  const res = await fetch(`${BASE}/users/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify(body),
+  })
+  checkAuth(res)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Update failed' }))
+    throw new Error(err.detail || 'Update failed')
+  }
   return res.json()
 }

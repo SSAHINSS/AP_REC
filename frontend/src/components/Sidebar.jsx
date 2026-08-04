@@ -114,13 +114,14 @@ function IconPayroll({ active }) {
 }
 
 export default function Sidebar({ page, setPage }) {
+  const perms = getPerms()
   const items = [
     { id: 'home',      label: 'Home',        Icon: IconHome },
     { id: 'aprec',     label: 'AP Rec',      Icon: IconAPRec },
     { id: 'filenamer', label: 'File Namer',   Icon: IconFileNamer },
     { id: 'trends',    label: 'Expense Trends',       Icon: IconTrends },
     { id: 'payroll',   label: 'Payroll',      Icon: IconPayroll },
-  ]
+  ].filter(it => it.id === 'home' || perms.includes(it.id))
 
   return (
     <div style={{
