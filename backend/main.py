@@ -23,6 +23,16 @@ from payroll_engine import (accrual as payroll_accrual, trends as payroll_trends
                             rate_detail as payroll_rate_detail, cell_detail as payroll_cell_detail)
 from db import init_db, get_session, User, store_gl, load_gl, SessionLocal, USING_SQLITE
 
+
+def _iso_utc(dt):
+    """Timestamps come back from the DB naive (tz dropped). Re-attach UTC so
+    browsers convert to the user's local time instead of showing UTC as local."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
 app = FastAPI(title="AP Reconciliation API")
 app.add_middleware(
     CORSMiddleware,
@@ -288,7 +298,7 @@ def gl_status(user: User = Depends(require_auth), db: Session = Depends(get_sess
         return {"has_gl": False}
     filename, _bytes, uploaded_at = stored
     return {"has_gl": True, "filename": filename,
-            "uploaded_at": uploaded_at.isoformat() if uploaded_at else None}
+            "uploaded_at": _iso_utc(uploaded_at)}
 
 
 @app.post("/trends/analyze")
@@ -322,7 +332,7 @@ async def trends_analyze(
             tmp = f.name
         result = analyze_trends(tmp, entity=entity or None, view=view, period=period or None)
         result["gl_filename"] = filename
-        result["gl_uploaded_at"] = uploaded_at.isoformat() if uploaded_at else None
+        result["gl_uploaded_at"] = _iso_utc(uploaded_at)
         return result
     except HTTPException:
         raise

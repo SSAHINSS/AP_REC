@@ -11,7 +11,7 @@ function monthLabel(m) {
 const MODULES = [
   { id: 'aprec',     name: 'AP Rec',     desc: 'Reconcile vendor statements against the GL', needsGl: false },
   { id: 'filenamer', name: 'File Namer', desc: 'Rename invoice PDFs from their content',      needsGl: false },
-  { id: 'trends',    name: 'Trends',     desc: 'Vendor × month expense analysis with flags',  needsGl: true },
+  { id: 'trends',    name: 'Expense Trends', desc: 'Vendor & credit-card expense analysis with flags', needsGl: true },
   { id: 'payroll',   name: 'Payroll',    desc: 'Month-end accrual calculator + payroll trends', needsGl: true },
 ]
 
@@ -21,11 +21,13 @@ export default function HomePage({ go }) {
   const [busy, setBusy]       = useState(false)
   const [error, setError]     = useState('')
   const [ephemeralDb, setEphemeralDb] = useState(false)
+  const [showUpload, setShowUpload] = useState(false)
 
   useEffect(() => {
     glStatus().then(s => {
       if (s.has_gl) setStored({ filename: s.filename, uploaded_at: s.uploaded_at })
-    }).catch(() => {})
+      else setShowUpload(true)
+    }).catch(() => setShowUpload(true))
     healthCheck().then(hc => {
       if ((hc.db || '').startsWith('sqlite')) setEphemeralDb(true)
     }).catch(() => {})
@@ -38,6 +40,7 @@ export default function HomePage({ go }) {
       const res = await uploadGl(files[0])
       setStored(res)
       setFiles([])
+      setShowUpload(false)
     } catch (e) {
       setError(e.message)
     } finally {
@@ -61,38 +64,7 @@ export default function HomePage({ go }) {
         </div>
       )}
 
-      {/* GL upload — the single source for every module */}
-      <div className="card">
-        <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ox)',
-                      letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>
-          General Ledger — drives Trends &amp; Payroll
-        </div>
-
-        {stored ? (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 12, marginBottom: 12,
-                        display: 'flex', flexWrap: 'wrap', gap: '6px 22px' }}>
-            <span>GL on file: <b>{stored.filename}</b></span>
-            {stored.uploaded_at && <span style={{ color: 'var(--muted)' }}>uploaded {new Date(stored.uploaded_at).toLocaleString()}</span>}
-            {stored.rows != null && <span style={{ color: 'var(--muted)' }}>{stored.rows.toLocaleString()} rows</span>}
-            {stored.first_month && <span style={{ color: 'var(--muted)' }}>{monthLabel(stored.first_month)} – {monthLabel(stored.last_month)}</span>}
-            {stored.entities != null && <span style={{ color: 'var(--muted)' }}>{stored.entities} entities</span>}
-          </div>
-        ) : (
-          <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
-            No GL on file yet — upload your Sage Intacct GL Detail export (CSV) to unlock Trends and Payroll.
-          </div>
-        )}
-
-        <DropZone label={stored ? 'Drop a NEW GL CSV to replace the saved one' : 'Drop GL CSV here'}
-                  accept={['csv']} files={files} onChange={setFiles} />
-        <button className="btn btn-primary" disabled={!files.length || busy}
-                onClick={doUpload} style={{ marginTop: 12 }}>
-          {busy ? 'Uploading…' : stored ? 'Replace GL →' : 'Upload GL →'}
-        </button>
-        {error && <div style={{ color: 'var(--err)', fontFamily: 'var(--mono)', fontSize: 12, marginTop: 10 }}>{error}</div>}
-      </div>
-
-      {/* Module launcher */}
+      {/* Module launcher — the main event */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 16 }}>
         {MODULES.map(m => {
           const locked = m.needsGl && !stored
@@ -113,6 +85,53 @@ export default function HomePage({ go }) {
             </button>
           )
         })}
+      </div>
+
+      {/* GL data status — compact bar; dropzone tucked behind "Replace GL" */}
+      <div className="card">
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 18px',
+                      fontFamily: 'var(--mono)', fontSize: 12 }}>
+          <span style={{ fontSize: 11, color: 'var(--ox)', letterSpacing: '0.1em',
+                         textTransform: 'uppercase' }}>General Ledger</span>
+          {stored ? (
+            <>
+              <span><b>{stored.filename}</b></span>
+              {stored.uploaded_at && (
+                <span style={{ color: 'var(--muted)' }}>
+                  last updated {new Date(stored.uploaded_at).toLocaleString()}
+                </span>
+              )}
+              {stored.rows != null && <span style={{ color: 'var(--muted)' }}>{stored.rows.toLocaleString()} rows</span>}
+              {stored.first_month && <span style={{ color: 'var(--muted)' }}>{monthLabel(stored.first_month)} – {monthLabel(stored.last_month)}</span>}
+              {stored.entities != null && <span style={{ color: 'var(--muted)' }}>{stored.entities} entities</span>}
+            </>
+          ) : (
+            <span style={{ color: 'var(--warn)' }}>
+              No GL on file — upload your Sage Intacct GL Detail export (CSV) to unlock Expense Trends and Payroll.
+            </span>
+          )}
+          <span style={{ flex: 1 }} />
+          <button className="btn btn-icon" onClick={() => setShowUpload(s => !s)}
+                  style={{ padding: '3px 12px', fontSize: 10 }}>
+            {showUpload ? 'Cancel' : stored ? 'Replace GL' : 'Upload GL'}
+          </button>
+        </div>
+
+        {showUpload && (
+          <div style={{ marginTop: 14 }}>
+            <DropZone label={stored ? 'Drop a NEW GL CSV to replace the saved one' : 'Drop GL CSV here'}
+                      accept={['csv']} files={files} onChange={setFiles} />
+            <button className="btn btn-primary" disabled={!files.length || busy}
+                    onClick={doUpload} style={{ marginTop: 12 }}>
+              {busy ? 'Uploading…' : stored ? 'Replace GL →' : 'Upload GL →'}
+            </button>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginTop: 8 }}>
+              Note: attaching a GL inside AP Rec / Expense Trends / Payroll also updates the saved copy —
+              "last updated" reflects the newest from any source.
+            </div>
+            {error && <div style={{ color: 'var(--err)', fontFamily: 'var(--mono)', fontSize: 12, marginTop: 10 }}>{error}</div>}
+          </div>
+        )}
       </div>
     </div>
   )
