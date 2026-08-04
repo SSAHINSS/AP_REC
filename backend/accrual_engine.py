@@ -55,11 +55,26 @@ JE_HEADERS = ["DONOTIMPORT", "JOURNAL", "DATE", "REVERSEDATE", "DESCRIPTION",
               "GLENTRY_EMPLOYEEID", "GLENTRY_ITEMID", "GLENTRY_CLASSID"]
 
 
+# Standard accrual/liability accounts, used when the GL export is
+# expense-filtered and contains no 3xxxx activity to list.
+DEFAULT_ACCRUAL_ACCOUNTS = [
+    {"account": "30100", "title": "Accrued Expenses"},
+    {"account": "30200", "title": "Accounts Payable"},
+    {"account": "35600", "title": "Accrued Wages"},
+    {"account": "35700", "title": "Accrued Taxes"},
+    {"account": "30201", "title": "401(k) Payable"},
+    {"account": "30205", "title": "Workers Comp Payable"},
+    {"account": "30206", "title": "Health Insurance Payable"},
+]
+
+
 def account_choices(gl_path):
-    """Liability accounts (3xxxx) present in the GL, for the credit side."""
+    """Liability accounts (3xxxx) from the GL when present; the standard
+    accrual accounts otherwise — the dropdown always has content."""
     ref = _gl_reference(gl_path)
-    return [{"account": a, "title": str(ref["titles"].get(a, "") or "")[:60]}
-            for a in sorted(ref["accounts"]) if a.startswith("3")]
+    from_gl = [{"account": a, "title": str(ref["titles"].get(a, "") or "")[:60]}
+               for a in sorted(ref["accounts"]) if a.startswith("3")]
+    return from_gl if from_gl else DEFAULT_ACCRUAL_ACCOUNTS
 
 
 def row_defaults(gl_path, entity, group, label, period):

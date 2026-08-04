@@ -18,6 +18,10 @@ const rowKey = (g, l) => `${g}::${l}`
 
 // Calculator input: "40*4" → 160. Strict whitelist — digits, + - * / ( ) .
 // only — then evaluated as pure arithmetic. Anything else → NaN.
+function fmtAmount(v) {
+  return v.toLocaleString('en-US', { maximumFractionDigits: 2 })
+}
+
 function evalAmount(raw) {
   if (raw == null) return NaN
   const s = String(raw).replace(/[$,\s]/g, '')
@@ -39,6 +43,7 @@ export default function AccrualPage() {
   const [error, setError]     = useState('')
   const [noGl, setNoGl]       = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [customCredit, setCustomCredit] = useState(false)
   const [exportErrors, setExportErrors] = useState([])
   const [win, setWin]         = useState(null)
   const saveTimer = useRef(null)
@@ -173,13 +178,6 @@ export default function AccrualPage() {
       <GlPicker module="trends" moduleLabel="Accrual Builder"
                 onChanged={() => entity && loadEntity(entity, period)} />
 
-      <div className="card" style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
-        <b style={{ color: 'var(--warn)' }}>EXPERIMENTAL</b> — review AP spend, check the vendors to
-        accrue, enter amounts, and export a Sage-ready JE import CSV. Uses the same GL as Expense
-        Trends. Credit-card spend is excluded entirely (already paid — nothing to accrue). Your work autosaves per
-        entity + month.
-      </div>
-
       {noGl && (
         <div className="card" style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>
           No GL on file yet — use the GL Source bar above to upload one.
@@ -196,9 +194,6 @@ export default function AccrualPage() {
               {(data?.entities || []).map(e => <option key={e} value={e}>{e}</option>)}
             </select>
             {!data && !noGl && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>loading entities…</span>}
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>
-              one entity at a time — each JE file is entity-specific
-            </span>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={lbl}>Close Month</span>
@@ -206,27 +201,22 @@ export default function AccrualPage() {
               {(data?.available_months || []).slice().reverse().map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             <span style={{ ...lbl, marginLeft: 18 }}>2 · Accrue to (credit)</span>
-            {accounts.length > 0 ? (
-              <select value={creditAcct || ''} onChange={e => setCredit(e.target.value)} style={sel}>
-                <option value="">— select account —</option>
-                {creditAcct && !accounts.some(a => a.account === creditAcct) && (
-                  <option value={creditAcct}>{creditAcct} (remembered)</option>
-                )}
-                {accounts.map(a => (
-                  <option key={a.account} value={a.account}>{a.account} {a.title}</option>
-                ))}
-              </select>
-            ) : (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                <input type="text" inputMode="numeric" placeholder="e.g. 30100" maxLength={5}
-                       value={creditAcct || ''}
-                       onChange={e => setCredit(e.target.value.replace(/\D/g, '').slice(0, 5))}
-                       title="The liability account the accrual credits (5-digit Sage account number)"
-                       style={{ ...sel, width: 110 }} />
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>
-                  5-digit accrual account — your GL export has no 3xxxx accounts to list
-                </span>
-              </span>
+            <select value={accounts.some(a => a.account === creditAcct) ? creditAcct : (creditAcct ? '__other' : '')}
+                    onChange={e => {
+                      if (e.target.value === '__other') { setCredit('') ; setCustomCredit(true) }
+                      else { setCustomCredit(false); setCredit(e.target.value) }
+                    }} style={sel}>
+              <option value="">— select account —</option>
+              {accounts.map(a => (
+                <option key={a.account} value={a.account}>{a.account} {a.title}</option>
+              ))}
+              <option value="__other">Other…</option>
+            </select>
+            {(customCredit || (creditAcct && !accounts.some(a => a.account === creditAcct))) && (
+              <input type="text" inputMode="numeric" placeholder="acct #" maxLength={5}
+                     value={creditAcct || ''}
+                     onChange={e => setCredit(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                     style={{ ...sel, width: 90 }} />
             )}
             {loading && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>loading…</span>}
             {error && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--err)' }}>{error}</span>}
@@ -237,7 +227,7 @@ export default function AccrualPage() {
       {/* Step 3: review table */}
       {data && !entity && !noGl && (
         <div className="card" style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>
-          Pick an entity above to load its vendors — accrual JEs are built one entity at a time.
+          Select an entity to begin.
         </div>
       )}
 
@@ -250,11 +240,6 @@ export default function AccrualPage() {
 
       {data && !data.error && entity && (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '12px 16px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
-            3 · Check a vendor, enter the accrual amount (quick math works: 40*4 → 160). The debit account and location are set
-            automatically from that vendor's history in this entity. Click any month number to see
-            the transactions behind it.
-          </div>
           <div style={{ overflowX: 'auto', borderTop: '1px solid var(--border)' }}>
             <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}>
               <thead><tr>
@@ -332,12 +317,12 @@ export default function AccrualPage() {
                                          onKeyDown={e => {
                                            if (e.key === 'Enter') {
                                              const v = evalAmount(st.amount)
-                                             if (!isNaN(v)) setField(k, 'amount', String(v))
+                                             if (!isNaN(v)) setField(k, 'amount', fmtAmount(v))
                                            }
                                          }}
                                          onBlur={() => {
                                            const v = evalAmount(st.amount)
-                                           if (!isNaN(v) && String(v) !== String(st.amount)) setField(k, 'amount', String(v))
+                                           if (!isNaN(v) && fmtAmount(v) !== String(st.amount)) setField(k, 'amount', fmtAmount(v))
                                          }}
                                          style={inp(110)} />
                                 </span>
