@@ -1,3 +1,5 @@
+import { getPerms } from '../api'
+
 // Pixel art icons as inline SVG
 function IconHome({ active }) {
   const c = active ? '#FF7030' : '#8C7B6A'
