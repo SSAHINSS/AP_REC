@@ -17,7 +17,7 @@ import gzip
 import os
 from datetime import datetime, timezone
 
-from sqlalchemy import (Boolean, Column, DateTime, ForeignKey, Integer,
+from sqlalchemy import (UniqueConstraint, Boolean, Column, DateTime, ForeignKey, Integer,
                         LargeBinary, String, create_engine)
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -50,10 +50,13 @@ class GLFile(Base):
     __tablename__ = "gl_files"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
-                     unique=True, nullable=False, index=True)
+                     nullable=False, index=True)
+    # 'shared' = the user's default GL; or a module override: aprec/trends/payroll
+    scope = Column(String(16), nullable=False, default="shared")
     filename = Column(String(512), nullable=False)
     data_gz = Column(LargeBinary, nullable=False)      # gzip-compressed CSV bytes
     uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    __table_args__ = (UniqueConstraint("user_id", "scope", name="uq_gl_user_scope"),)
 
 
 def init_db():
@@ -75,6 +78,18 @@ def init_db():
                 "WHERE permissions IS NULL"))
     except Exception:
         pass
+    # GL scope migration (safe to re-run)
+    for stmt in (
+        "ALTER TABLE gl_files ADD COLUMN scope VARCHAR(16) DEFAULT 'shared'",
+        "UPDATE gl_files SET scope = 'shared' WHERE scope IS NULL",
+        "ALTER TABLE gl_files DROP CONSTRAINT gl_files_user_id_key",       # postgres old unique
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_gl_user_scope ON gl_files (user_id, scope)",
+    ):
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(stmt))
+        except Exception:
+            pass
 
 
 def get_session():
@@ -86,24 +101,51 @@ def get_session():
 
 
 # ── GL helpers ─────────────────────────────────────────────────────────────
-def store_gl(db, user_id: int, filename: str, csv_bytes: bytes):
-    """Replace the user's stored GL with a new upload."""
-    row = db.query(GLFile).filter(GLFile.user_id == user_id).first()
+def store_gl(db, user_id: int, filename: str, csv_bytes: bytes, scope: str = "shared"):
+    """Replace THIS USER's stored GL for the given scope. Strictly per-user."""
+    row = (db.query(GLFile)
+             .filter(GLFile.user_id == user_id, GLFile.scope == scope).first())
     gz = gzip.compress(csv_bytes)
     if row:
         row.filename = filename
         row.data_gz = gz
         row.uploaded_at = datetime.now(timezone.utc)
     else:
-        row = GLFile(user_id=user_id, filename=filename, data_gz=gz)
+        row = GLFile(user_id=user_id, scope=scope, filename=filename, data_gz=gz)
         db.add(row)
     db.commit()
     return row
 
 
-def load_gl(db, user_id: int):
-    """Return (filename, csv_bytes, uploaded_at) or None if nothing stored."""
-    row = db.query(GLFile).filter(GLFile.user_id == user_id).first()
+def load_gl(db, user_id: int, scope: str = None):
+    """
+    Return (filename, csv_bytes, uploaded_at, used_scope) for THIS USER only.
+    With a module scope: prefer the module's own GL, else fall back to the
+    user's shared GL. None if neither exists.
+    """
+    row = None
+    if scope and scope != "shared":
+        row = (db.query(GLFile)
+                 .filter(GLFile.user_id == user_id, GLFile.scope == scope).first())
+    if row is None:
+        row = (db.query(GLFile)
+                 .filter(GLFile.user_id == user_id, GLFile.scope == "shared").first())
     if not row:
         return None
-    return row.filename, gzip.decompress(row.data_gz), row.uploaded_at
+    return row.filename, gzip.decompress(row.data_gz), row.uploaded_at, row.scope
+
+
+def delete_gl(db, user_id: int, scope: str):
+    """Remove THIS USER's module-specific GL (reverting the module to shared)."""
+    n = (db.query(GLFile)
+           .filter(GLFile.user_id == user_id, GLFile.scope == scope).delete())
+    db.commit()
+    return n
+
+
+def gl_overview(db, user_id: int):
+    """All GL slots for THIS USER: {scope: {filename, uploaded_at}}."""
+    out = {}
+    for row in db.query(GLFile).filter(GLFile.user_id == user_id).all():
+        out[row.scope] = {"filename": row.filename, "uploaded_at": row.uploaded_at}
+    return out

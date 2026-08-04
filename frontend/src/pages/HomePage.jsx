@@ -9,10 +9,10 @@ function monthLabel(m) {
 }
 
 const MODULES = [
-  { id: 'aprec',     name: 'AP Rec',     desc: 'Reconcile vendor statements against the GL', needsGl: false },
-  { id: 'filenamer', name: 'File Namer', desc: 'Rename invoice PDFs from their content',      needsGl: false },
-  { id: 'trends',    name: 'Expense Trends', desc: 'Vendor & credit-card expense analysis with flags', needsGl: true },
-  { id: 'payroll',   name: 'Payroll',    desc: 'Month-end accrual calculator + payroll trends', needsGl: true },
+  { id: 'aprec',     name: 'AP Rec',     desc: 'Reconcile vendor statements against the GL' },
+  { id: 'trends',    name: 'Expense Trends', desc: 'Vendor & credit-card expense analysis with flags' },
+  { id: 'payroll',   name: 'Payroll',    desc: 'Month-end accrual calculator + payroll trends' },
+  { id: 'filenamer', name: 'File Namer', desc: 'Rename invoice PDFs from their content' },
 ]
 
 export default function HomePage({ go }) {
@@ -67,7 +67,7 @@ export default function HomePage({ go }) {
       {/* Module launcher — the main event */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 16 }}>
         {MODULES.filter(m => getPerms().includes(m.id)).map(m => {
-          const locked = m.needsGl && !stored
+          const locked = false
           return (
             <button key={m.id} onClick={() => go(m.id)}
               className="card"
@@ -87,52 +87,6 @@ export default function HomePage({ go }) {
         })}
       </div>
 
-      {/* GL data status — compact bar; dropzone tucked behind "Replace GL" */}
-      <div className="card">
-        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 18px',
-                      fontFamily: 'var(--mono)', fontSize: 12 }}>
-          <span style={{ fontSize: 11, color: 'var(--ox)', letterSpacing: '0.1em',
-                         textTransform: 'uppercase' }}>General Ledger</span>
-          {stored ? (
-            <>
-              <span><b>{stored.filename}</b></span>
-              {stored.uploaded_at && (
-                <span style={{ color: 'var(--muted)' }}>
-                  last updated {new Date(stored.uploaded_at).toLocaleString()}
-                </span>
-              )}
-              {stored.rows != null && <span style={{ color: 'var(--muted)' }}>{stored.rows.toLocaleString()} rows</span>}
-              {stored.first_month && <span style={{ color: 'var(--muted)' }}>{monthLabel(stored.first_month)} – {monthLabel(stored.last_month)}</span>}
-              {stored.entities != null && <span style={{ color: 'var(--muted)' }}>{stored.entities} entities</span>}
-            </>
-          ) : (
-            <span style={{ color: 'var(--warn)' }}>
-              No GL on file — upload your Sage Intacct GL Detail export (CSV) to unlock Expense Trends and Payroll.
-            </span>
-          )}
-          <span style={{ flex: 1 }} />
-          <button className="btn btn-icon" onClick={() => setShowUpload(s => !s)}
-                  style={{ padding: '3px 12px', fontSize: 10 }}>
-            {showUpload ? 'Cancel' : stored ? 'Replace GL' : 'Upload GL'}
-          </button>
-        </div>
-
-        {showUpload && (
-          <div style={{ marginTop: 14 }}>
-            <DropZone label={stored ? 'Drop a NEW GL CSV to replace the saved one' : 'Drop GL CSV here'}
-                      accept={['csv']} files={files} onChange={setFiles} />
-            <button className="btn btn-primary" disabled={!files.length || busy}
-                    onClick={doUpload} style={{ marginTop: 12 }}>
-              {busy ? 'Uploading…' : stored ? 'Replace GL →' : 'Upload GL →'}
-            </button>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginTop: 8 }}>
-              Note: attaching a GL inside AP Rec / Expense Trends / Payroll also updates the saved copy —
-              "last updated" reflects the newest from any source.
-            </div>
-            {error && <div style={{ color: 'var(--err)', fontFamily: 'var(--mono)', fontSize: 12, marginTop: 10 }}>{error}</div>}
-          </div>
-        )}
-      </div>
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { payrollAccrual, payrollTrends, payrollDetail } from '../api'
+import GlPicker from '../components/GlPicker'
 
 const MONEY = v =>
   v === 0 || v == null ? '—'
@@ -133,10 +134,11 @@ export default function PayrollPage() {
   const cellKey = (cat, m)   => `cell:${cat}:${m}`
 
   if (noGl) return (
-    <div style={{ maxWidth: 1760, margin: '0 auto', padding: '24px' }}>
+    <div style={{ maxWidth: 1760, margin: '0 auto', padding: '24px',
+                  display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <GlPicker module="payroll" moduleLabel="Payroll" onChanged={() => loadAll()} />
       <div className="card" style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>
-        No GL on file yet. Upload your Sage Intacct GL on the <b style={{ color: 'var(--ox)' }}>Home</b> page first —
-        Payroll uses the same saved GL.
+        No GL on file yet — use the GL Source bar above to upload one.
       </div>
     </div>
   )
@@ -144,6 +146,8 @@ export default function PayrollPage() {
   return (
     <div style={{ minHeight: '100vh', maxWidth: 1760, margin: '0 auto', padding: '24px 24px 80px',
                   display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+      <GlPicker module="payroll" moduleLabel="Payroll" onChanged={() => loadAll()} />
 
       {/* Selectors */}
       {trendData && (

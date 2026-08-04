@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { analyzeTrends, exportTrends } from '../api'
 import DetailWindow from '../components/DetailWindow'
+import GlPicker from '../components/GlPicker'
 import CardholderView from './CardholderView'
 
 const MONEY = v =>
@@ -187,6 +188,8 @@ export default function TrendsPage() {
                   display: 'flex', flexDirection: 'column', gap: 24 }}>
       <style>{CROSSHAIR_CSS}</style>
 
+      <GlPicker module="trends" moduleLabel="Expense Trends" onChanged={() => run()} />
+
       <div style={{ display: 'flex', gap: 6 }}>
         <button onClick={() => setMode('trends')} style={modePill(mode === 'trends')}>Expense Trends</button>
         <button onClick={() => setMode('cards')} style={modePill(mode === 'cards')}>Credit Card Expenses</button>
@@ -196,7 +199,7 @@ export default function TrendsPage() {
 
       {mode === 'trends' && noGl && !data && (
         <div className="card" style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>
-          No GL on file yet. Upload it on the <b style={{ color: 'var(--ox)' }}>Home</b> page —
+          No GL on file yet — use the GL Source bar above to upload one.{' '}
           every module reads the same saved GL.
         </div>
       )}

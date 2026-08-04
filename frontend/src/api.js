@@ -78,9 +78,10 @@ export async function healthCheck() {
   return res.json()
 }
 
-export async function uploadGl(glFile) {
+export async function uploadGl(glFile, scope = 'shared') {
   const form = new FormData()
   form.append('gl_file', glFile)
+  form.append('scope', scope)
   const res = await fetch(`${BASE}/gl/upload`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${getToken()}` },
@@ -96,7 +97,7 @@ export async function uploadGl(glFile) {
 
 export async function reconcile(glFile, statementFiles, onLog) {
   const form = new FormData()
-  form.append('gl_file', glFile)
+  if (glFile) form.append('gl_file', glFile)
   for (const f of statementFiles) form.append('statements', f)
 
   const res = await fetch(`${BASE}/reconcile`, {
@@ -303,5 +304,15 @@ export async function updateUser(id, body) {
     const err = await res.json().catch(() => ({ detail: 'Update failed' }))
     throw new Error(err.detail || 'Update failed')
   }
+  return res.json()
+}
+
+export async function deleteGlOverride(scope) {
+  const res = await fetch(`${BASE}/gl/override/${scope}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${getToken()}` },
+  })
+  checkAuth(res)
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Revert failed')
   return res.json()
 }

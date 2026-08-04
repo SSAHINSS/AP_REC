@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { reconcile, downloadFile } from '../api'
 import DropZone from '../components/DropZone'
+import GlPicker from '../components/GlPicker'
 
 const WORD = 'PROCESSING...'
 const CENTER = (WORD.length - 1) / 2
@@ -66,26 +67,31 @@ export default function AppPage() {
   }, [jobId])
 
   async function handleRun() {
-    if (!glFiles[0] || !stmtFiles.length) return
+    if (!stmtFiles.length) return
     setRunning(true); setLogs([]); setJobId(null); setError('')
     try {
-      const result = await reconcile(glFiles[0], stmtFiles, msg => setLogs(prev => [...prev, msg]))
+      const result = await reconcile(glFiles[0] || null, stmtFiles, msg => setLogs(prev => [...prev, msg]))
       setJobId(result.job_id)
     } catch(e) { setError(e.message) }
     finally { setRunning(false) }
   }
 
-  const ready = glFiles.length > 0 && stmtFiles.length > 0 && !running
+  const ready = stmtFiles.length > 0 && !running
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '32px 24px 80px', display: 'flex', flexDirection: 'column', gap: 32 }}>
 
+      <GlPicker module="aprec" moduleLabel="AP Rec" />
+
       <div className="card">
         <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ox)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>01 — GL Export</div>
-          <p style={{ color: 'var(--muted)', fontSize: 13 }}>Upload your general ledger CSV export</p>
+          <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--ox)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>01 — GL Export (optional)</div>
+          <p style={{ color: 'var(--muted)', fontSize: 13 }}>
+            Attach a GL for this run, or leave empty to use your saved GL shown above.
+            Attaching one also saves it as your AP Rec GL for next time.
+          </p>
         </div>
-        <DropZone label="Drop GL CSV here" accept={['csv']} files={glFiles} onChange={setGlFiles} />
+        <DropZone label="Drop GL CSV here (optional)" accept={['csv']} files={glFiles} onChange={setGlFiles} />
       </div>
 
       <div className="card" ref={stmtRef}>

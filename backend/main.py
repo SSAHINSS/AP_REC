@@ -21,7 +21,8 @@ from trends_engine import (analyze as analyze_trends, detail as trends_detail_fn
 from trends_report import build_report
 from payroll_engine import (accrual as payroll_accrual, trends as payroll_trends,
                             rate_detail as payroll_rate_detail, cell_detail as payroll_cell_detail)
-from db import init_db, get_session, User, store_gl, load_gl, SessionLocal, USING_SQLITE
+from db import (init_db, get_session, User, store_gl, load_gl, delete_gl,
+                gl_overview, SessionLocal, USING_SQLITE)
 
 
 def _iso_utc(dt):
@@ -241,16 +242,28 @@ def delete_user(user_id: int, admin: User = Depends(require_admin),
 # ── Reconciliation ─────────────────────────────────────────────────────────
 @app.post("/reconcile")
 async def reconcile(
-    gl_file: UploadFile = File(...),
     statements: list[UploadFile] = File(...),
+    gl_file: UploadFile | None = File(None),
     user: User = Depends(require_module("aprec")),
+    db: Session = Depends(get_session),
 ):
     job_id = str(uuid.uuid4())
     job_dir = UPLOAD_DIR / job_id
     job_dir.mkdir()
     try:
-        gl_path = job_dir / gl_file.filename
-        gl_path.write_bytes(await gl_file.read())
+        if gl_file is not None and gl_file.filename:
+            gl_bytes = await gl_file.read()
+            gl_name = gl_file.filename
+            # remember it as this user's AP-Rec-specific GL for next time
+            store_gl(db, user.id, gl_name, gl_bytes, scope="aprec")
+        else:
+            stored = load_gl(db, user.id, scope="aprec")
+            if not stored:
+                raise HTTPException(status_code=422,
+                                    detail="No GL on file — attach one or upload a GL first")
+            gl_name, gl_bytes, _up, _sc = stored
+        gl_path = job_dir / gl_name
+        gl_path.write_bytes(gl_bytes)
         stmt_paths = []
         for s in statements:
             p = job_dir / s.filename
@@ -335,11 +348,14 @@ async def rename_download(
 @app.post("/gl/upload")
 async def gl_upload(
     gl_file: UploadFile = File(...),
+    scope: str = Form("shared"),
     user: User = Depends(require_auth),
     db: Session = Depends(get_session),
 ):
+    if scope not in ("shared", "aprec", "trends", "payroll"):
+        raise HTTPException(status_code=422, detail="Bad scope")
     csv_bytes = await gl_file.read()
-    store_gl(db, user.id, gl_file.filename, csv_bytes)
+    store_gl(db, user.id, gl_file.filename, csv_bytes, scope=scope)
     # quick summary for the Home page
     try:
         import io as _io
@@ -363,12 +379,26 @@ async def gl_upload(
 
 @app.get("/gl/status")
 def gl_status(user: User = Depends(require_auth), db: Session = Depends(get_session)):
-    stored = load_gl(db, user.id)
-    if not stored:
-        return {"has_gl": False}
-    filename, _bytes, uploaded_at = stored
-    return {"has_gl": True, "filename": filename,
-            "uploaded_at": _iso_utc(uploaded_at)}
+    """Per-user GL slots: the shared GL plus any module-specific overrides."""
+    ov = gl_overview(db, user.id)
+    def fmt(s):
+        r = ov.get(s)
+        return {"filename": r["filename"], "uploaded_at": _iso_utc(r["uploaded_at"])} if r else None
+    return {"has_gl": "shared" in ov,
+            "shared": fmt("shared"),
+            "overrides": {s: fmt(s) for s in ("aprec", "trends", "payroll")},
+            # legacy fields so nothing breaks mid-deploy
+            "filename": (ov.get("shared") or {}).get("filename"),
+            "uploaded_at": _iso_utc((ov.get("shared") or {}).get("uploaded_at"))}
+
+
+@app.delete("/gl/override/{scope}")
+def gl_override_delete(scope: str, user: User = Depends(require_auth),
+                       db: Session = Depends(get_session)):
+    if scope not in ("aprec", "trends", "payroll"):
+        raise HTTPException(status_code=422, detail="Bad scope")
+    n = delete_gl(db, user.id, scope)
+    return {"removed": n, "scope": scope}
 
 
 @app.post("/trends/analyze")
@@ -385,15 +415,15 @@ async def trends_analyze(
 
     if gl_file is not None and gl_file.filename:
         csv_bytes = await gl_file.read()
-        store_gl(db, user.id, gl_file.filename, csv_bytes)
+        store_gl(db, user.id, gl_file.filename, csv_bytes, scope="trends")
         filename = gl_file.filename
         uploaded_at = datetime.now(timezone.utc)
     else:
-        stored = load_gl(db, user.id)
+        stored = load_gl(db, user.id, scope="trends")
         if not stored:
             raise HTTPException(status_code=422,
                                 detail="No GL on file — upload one to begin")
-        filename, csv_bytes, uploaded_at = stored
+        filename, csv_bytes, uploaded_at, _sc = stored
 
     tmp = None
     try:
@@ -425,12 +455,12 @@ async def payroll_accrual_ep(
 ):
     if gl_file is not None and gl_file.filename:
         csv_bytes = await gl_file.read()
-        store_gl(db, user.id, gl_file.filename, csv_bytes)
+        store_gl(db, user.id, gl_file.filename, csv_bytes, scope="payroll")
     else:
-        stored = load_gl(db, user.id)
+        stored = load_gl(db, user.id, scope="payroll")
         if not stored:
             raise HTTPException(status_code=422, detail="No GL on file — upload one first")
-        _fn, csv_bytes, _up = stored
+        _fn, csv_bytes, _up, _sc = stored
     try:
         ov = json.loads(overrides or "{}")
     except Exception:
@@ -456,10 +486,10 @@ async def payroll_trends_ep(
     user: User = Depends(require_module("payroll")),
     db: Session = Depends(get_session),
 ):
-    stored = load_gl(db, user.id)
+    stored = load_gl(db, user.id, scope="payroll")
     if not stored:
         raise HTTPException(status_code=422, detail="No GL on file — upload one first")
-    _fn, csv_bytes, _up = stored
+    _fn, csv_bytes, _up, _sc = stored
     tmp = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
@@ -485,10 +515,10 @@ async def payroll_detail_ep(
     user: User = Depends(require_module("payroll")),
     db: Session = Depends(get_session),
 ):
-    stored = load_gl(db, user.id)
+    stored = load_gl(db, user.id, scope="payroll")
     if not stored:
         raise HTTPException(status_code=422, detail="No GL on file — upload one first")
-    _fn, csv_bytes, _up = stored
+    _fn, csv_bytes, _up, _sc = stored
     tmp = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
@@ -523,10 +553,10 @@ async def trends_detail_ep(
     user: User = Depends(require_module("trends")),
     db: Session = Depends(get_session),
 ):
-    stored = load_gl(db, user.id)
+    stored = load_gl(db, user.id, scope="trends")
     if not stored:
         raise HTTPException(status_code=422, detail="No GL on file — upload one first")
-    _fn, csv_bytes, _up = stored
+    _fn, csv_bytes, _up, _sc = stored
     cmps = [c for c in comparisons.split(",") if c] if comparisons else None
     tmp = None
     try:
@@ -552,10 +582,10 @@ async def trends_export_ep(
     user: User = Depends(require_module("trends")),
     db: Session = Depends(get_session),
 ):
-    stored = load_gl(db, user.id)
+    stored = load_gl(db, user.id, scope="trends")
     if not stored:
         raise HTTPException(status_code=422, detail="No GL on file — upload one first")
-    _fn, csv_bytes, _up = stored
+    _fn, csv_bytes, _up, _sc = stored
     tmp = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
@@ -585,10 +615,10 @@ async def trends_cardholders_ep(
     user: User = Depends(require_module("trends")),
     db: Session = Depends(get_session),
 ):
-    stored = load_gl(db, user.id)
+    stored = load_gl(db, user.id, scope="trends")
     if not stored:
         raise HTTPException(status_code=422, detail="No GL on file — upload one first")
-    _fn, csv_bytes, _up = stored
+    _fn, csv_bytes, _up, _sc = stored
     ents = [e for e in entities.split(",") if e] or None
     hlds = [h for h in holders.split("|") if h] or None   # names may contain commas → pipe-delimit
     tmp = None
@@ -614,10 +644,10 @@ async def trends_cardholder_detail_ep(
     user: User = Depends(require_module("trends")),
     db: Session = Depends(get_session),
 ):
-    stored = load_gl(db, user.id)
+    stored = load_gl(db, user.id, scope="trends")
     if not stored:
         raise HTTPException(status_code=422, detail="No GL on file — upload one first")
-    _fn, csv_bytes, _up = stored
+    _fn, csv_bytes, _up, _sc = stored
     ents = [e for e in entities.split(",") if e] or None
     tmp = None
     try:

@@ -120,9 +120,9 @@ export default function Sidebar({ page, setPage }) {
   const items = [
     { id: 'home',      label: 'Home',        Icon: IconHome },
     { id: 'aprec',     label: 'AP Rec',      Icon: IconAPRec },
-    { id: 'filenamer', label: 'File Namer',   Icon: IconFileNamer },
     { id: 'trends',    label: 'Expense Trends',       Icon: IconTrends },
     { id: 'payroll',   label: 'Payroll',      Icon: IconPayroll },
+    { id: 'filenamer', label: 'File Namer',   Icon: IconFileNamer },
   ].filter(it => it.id === 'home' || perms.includes(it.id))
 
   return (
