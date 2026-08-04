@@ -15,10 +15,31 @@ import pandas as pd
 
 from trends_engine import load_gl
 
-_REF = json.load(open(os.path.join(os.path.dirname(__file__), "sage_reference.json")))
-VALID_ACCOUNTS = set(_REF["accounts"])
-VALID_LOCATIONS = set(_REF["locations"])
-VALID_VENDORS = _REF["vendors"]            # name -> V-#### id
+# The JE template defines the OUTPUT FORMAT only. All data validation —
+# vendors, accounts, locations — comes from the user's own GL, which is a
+# Sage export and therefore the live truth. Self-maintaining by definition.
+
+
+def _gl_reference(gl_path):
+    """Sage-valid values straight from the GL: account set (+titles),
+    location set, vendor name -> V-#### id map."""
+    df = pd.read_csv(gl_path,
+                     usecols=["Account no", "Account title", "Location ID",
+                              "Vendor name", "Vendor ID"], low_memory=False)
+    acct = df["Account no"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+    accounts = set(acct[acct.str.match(r"^\d{5}$", na=False)])
+    titles = (pd.DataFrame({"a": acct, "t": df["Account title"]})
+                .dropna().drop_duplicates("a").set_index("a")["t"].to_dict())
+    locations = set(df["Location ID"].dropna().astype(str).str.strip())
+    v = df.dropna(subset=["Vendor name"]).copy()
+    v["Vendor name"] = v["Vendor name"].astype(str).str.strip()
+    v["Vendor ID"] = v["Vendor ID"].astype(str).str.strip()
+    v = v[v["Vendor ID"].str.match(r"^V-\d+", na=False)]
+    vendors = v.drop_duplicates("Vendor name").set_index("Vendor name")["Vendor ID"].to_dict()
+    return {"accounts": accounts, "titles": titles,
+            "locations": locations, "vendors": vendors}
+
+
 
 JE_HEADERS = ["DONOTIMPORT", "JOURNAL", "DATE", "REVERSEDATE", "DESCRIPTION",
               "REFERENCE_NO", "LINE_NO", "ACCT_NO", "LOCATION_ID", "DEPT_ID",
@@ -34,20 +55,10 @@ JE_HEADERS = ["DONOTIMPORT", "JOURNAL", "DATE", "REVERSEDATE", "DESCRIPTION",
 
 
 def account_choices(gl_path):
-    """Sage-valid liability accounts (3xxxx) for the credit side, with titles
-    from the GL where known."""
-    titles = {}
-    try:
-        raw = pd.read_csv(gl_path, usecols=["Account no", "Account title"], low_memory=False)
-        raw["Account no"] = raw["Account no"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
-        titles = raw.drop_duplicates("Account no").set_index("Account no")["Account title"].to_dict()
-    except Exception:
-        pass
-    out = []
-    for a in sorted(VALID_ACCOUNTS):
-        if a.startswith("3"):
-            out.append({"account": a, "title": str(titles.get(a, "") or "")[:60]})
-    return out
+    """Liability accounts (3xxxx) present in the GL, for the credit side."""
+    ref = _gl_reference(gl_path)
+    return [{"account": a, "title": str(ref["titles"].get(a, "") or "")[:60]}
+            for a in sorted(ref["accounts"]) if a.startswith("3")]
 
 
 def row_defaults(gl_path, entity, group, label, period):
@@ -58,18 +69,20 @@ def row_defaults(gl_path, entity, group, label, period):
             & (df["Vendor name"].astype(str) == str(label))]
     end = pd.Period(period, freq="M")
     df = df[df["Period"].isin(pd.period_range(end - 12, end, freq="M"))]
+    ref = _gl_reference(gl_path)
     if df.empty:
-        return {"acct_no": "", "location_id": "", "vendor_id": VALID_VENDORS.get(str(label), ""),
-                "vendor_valid": str(label) in VALID_VENDORS}
+        return {"acct_no": "", "location_id": "",
+                "vendor_id": ref["vendors"].get(str(label), ""),
+                "vendor_valid": str(label) in ref["vendors"]}
     acct = (df.groupby("Account no")["Amount"].apply(lambda s: s.abs().sum())
               .sort_values(ascending=False).index[0])
     loc = (df.groupby("Location ID")["Amount"].apply(lambda s: s.abs().sum())
              .sort_values(ascending=False).index[0])
     return {"acct_no": str(acct), "location_id": str(loc),
-            "vendor_id": VALID_VENDORS.get(str(label), ""),
-            "acct_valid": str(acct) in VALID_ACCOUNTS,
-            "location_valid": str(loc) in VALID_LOCATIONS,
-            "vendor_valid": str(label) in VALID_VENDORS}
+            "vendor_id": ref["vendors"].get(str(label), ""),
+            "acct_valid": str(acct) in ref["accounts"],
+            "location_valid": str(loc) in ref["locations"],
+            "vendor_valid": str(label) in ref["vendors"]}
 
 
 def entity_main_location(gl_path, entity):
@@ -96,11 +109,12 @@ def build_je_csv(gl_path, entity, period, credit_acct, lines, credit_location=No
     ref_no = f"ACCR-{entity}-{y}{mo:02d}"
     desc = f"AP accrual {month_end.strftime('%B %Y')} - {entity}"
 
+    ref = _gl_reference(gl_path)
     problems = []
     if not lines:
         problems.append("No accrual lines selected.")
-    if str(credit_acct) not in VALID_ACCOUNTS:
-        problems.append(f"Credit account {credit_acct!r} is not in the Sage chart of accounts.")
+    if str(credit_acct) not in ref["accounts"]:
+        problems.append(f"Credit account {credit_acct!r} does not appear in your GL.")
     clean = []
     for i, ln in enumerate(lines, 1):
         label = str(ln.get("label") or "").strip()
@@ -113,20 +127,20 @@ def build_je_csv(gl_path, entity, period, credit_acct, lines, credit_location=No
         where = f"line {i} ({label or 'no vendor'})"
         if amt <= 0:
             problems.append(f"{where}: amount must be a positive number.")
-        if acct not in VALID_ACCOUNTS:
-            problems.append(f"{where}: account {acct!r} is not a valid Sage account.")
-        if loc not in VALID_LOCATIONS:
-            problems.append(f"{where}: location {loc!r} is not a valid Sage location.")
-        if label not in VALID_VENDORS:
-            problems.append(f"{where}: vendor {label!r} is not an active Sage vendor "
-                            f"(memo must match the vendor list exactly).")
+        if acct not in ref["accounts"]:
+            problems.append(f"{where}: account {acct!r} does not appear in your GL.")
+        if loc not in ref["locations"]:
+            problems.append(f"{where}: location {loc!r} does not appear in your GL.")
+        if label not in ref["vendors"]:
+            problems.append(f"{where}: vendor {label!r} was not found in the GL "
+                            f"with a Sage Vendor ID.")
         clean.append({"label": label, "acct": acct, "loc": loc, "amount": amt})
     if problems:
         raise ValueError(problems)
 
     credit_loc = str(credit_location or "").strip() or entity_main_location(gl_path, entity)
-    if credit_loc not in VALID_LOCATIONS:
-        raise ValueError([f"Credit-line location {credit_loc!r} is not a valid Sage location."])
+    if credit_loc not in ref["locations"]:
+        raise ValueError([f"Credit-line location {credit_loc!r} does not appear in your GL."])
 
     total = round(sum(l["amount"] for l in clean), 2)
     buf = io.StringIO()
@@ -152,7 +166,7 @@ def build_je_csv(gl_path, entity, period, credit_acct, lines, credit_location=No
     for l in clean:
         n += 1
         w.writerow(row(n, l["acct"], l["loc"], l["label"], l["amount"], 0,
-                       VALID_VENDORS.get(l["label"], "")))
+                       ref["vendors"].get(l["label"], "")))
     n += 1
     w.writerow(row(n, str(credit_acct), credit_loc,
                    f"Accrued AP - {month_end.strftime('%B %Y')}", 0, total))
