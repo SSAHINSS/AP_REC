@@ -286,11 +286,11 @@ export async function cardholderDetail({ holder, entities = [], start = '', end 
 }
 
 export function getPerms() {
-  if (isAdmin()) return ['aprec', 'filenamer', 'trends', 'payroll']
+  if (isAdmin()) return ['aprec', 'filenamer', 'trends', 'payroll', 'accruals']
   try {
     const p = JSON.parse(localStorage.getItem('ap_perms') || 'null')
-    return Array.isArray(p) && p.length ? p : ['aprec', 'filenamer', 'trends', 'payroll']
-  } catch { return ['aprec', 'filenamer', 'trends', 'payroll'] }
+    return Array.isArray(p) && p.length ? p : ['aprec', 'filenamer', 'trends', 'payroll', 'accruals']
+  } catch { return ['aprec', 'filenamer', 'trends', 'payroll', 'accruals'] }
 }
 
 export async function updateUser(id, body) {
