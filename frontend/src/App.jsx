@@ -5,6 +5,7 @@ import HomePage from './pages/HomePage'
 import AppPage from './pages/AppPage'
 import FileNamerPage from './pages/FileNamerPage'
 import AccrualPage from './pages/AccrualPage'
+import AccrualLogo from './components/AccrualLogo'
 import TrendsPage from './pages/TrendsPage'
 import PayrollPage from './pages/PayrollPage'
 import Sidebar from './components/Sidebar'
@@ -171,16 +172,29 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
           </div>
         )}
 
-        {/* ACCRUAL BUILDER: text header (experimental module) */}
+        {/* ACCRUALS: static left logo + subtitle (matches the other modules) */}
         {page === 'accruals' && (
-          <div onClick={scrollTop} style={{ display: 'flex', alignItems: 'baseline', gap: 12,
-                                            cursor: 'pointer', userSelect: 'none' }}>
-            <span style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 22,
-                           letterSpacing: '0.06em', color: 'var(--ox)' }}>ACCRUAL BUILDER</span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--warn)',
-                           border: '1px solid var(--warn)', borderRadius: 2, padding: '1px 6px' }}>
-              EXPERIMENTAL
-            </span>
+          <div
+            onClick={scrollTop}
+            onMouseEnter={() => setLeftHovered(true)}
+            onMouseLeave={() => setLeftHovered(false)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 16,
+              transform: `scale(${leftHovered ? 1.03 : 1})`,
+              cursor: 'pointer',
+              transition: 'transform 0.18s cubic-bezier(0.34,1.56,0.64,1)',
+              userSelect: 'none',
+            }}
+          >
+            <AccrualLogo width={474} quick={true} />
+            <div style={{
+              animation: 'taglinePop 0.3s ease forwards',
+              animationDelay: '0.32s',
+              opacity: 0,
+            }}>
+              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--text)', margin: 0 }}>Accrual Builder</p>
+              <p style={{ fontSize: 9, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--warn)', margin: 0 }}>experimental</p>
+            </div>
           </div>
         )}
 

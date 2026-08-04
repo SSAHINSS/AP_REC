@@ -158,12 +158,16 @@ export default function AccrualPage() {
       {/* Step 1: entity + month */}
       {!noGl && (
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={lbl}>1 · Entity</span>
-            {(data?.entities || []).map(e => (
-              <button key={e} onClick={() => pickEntity(e)} style={pill(entity === e)}>{e}</button>
-            ))}
+            <select value={entity} onChange={e => pickEntity(e.target.value)} style={sel}>
+              <option value="">— select one entity —</option>
+              {(data?.entities || []).map(e => <option key={e} value={e}>{e}</option>)}
+            </select>
             {!data && !noGl && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>loading entities…</span>}
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>
+              one entity at a time — each JE file is entity-specific
+            </span>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={lbl}>Close Month</span>
@@ -200,8 +204,9 @@ export default function AccrualPage() {
       {data && !data.error && entity && (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '12px 16px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
-            3 · Check vendors to accrue — amounts blank by design; click any month number for its
-            transactions. Account &amp; location prefill from the GL (editable, Sage-validated on export).
+            3 · Check a vendor, enter the accrual amount. The debit account and location are set
+            automatically from that vendor's history in this entity. Click any month number to see
+            the transactions behind it.
           </div>
           <div style={{ overflowX: 'auto', borderTop: '1px solid var(--border)' }}>
             <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}>
@@ -211,7 +216,7 @@ export default function AccrualPage() {
                 {showMonths.map(i => <th key={i} style={th({})}>{monthLabel(months[i])}</th>)}
                 <th style={th({ color: 'var(--ox)' })}>{monthLabel(data.period)}</th>
                 <th style={th({})}>TOTAL</th>
-                <th style={th({ textAlign: 'left', minWidth: 330 })}>ACCRUE</th>
+                <th style={th({ textAlign: 'left', minWidth: 330 })}>ACCRUE — CHECK &amp; ENTER $</th>
               </tr></thead>
               <tbody>
                 {data.groups.map(g => (
@@ -228,6 +233,7 @@ export default function AccrualPage() {
                     const k = rowKey(g.name, r.label)
                     const st = rows[k]
                     const isCC = r.pay_type === 'cc'
+                    const isBlank = String(r.label).toLowerCase() === '(blank)'
                     const aIdx = months.length - 2
                     return (
                       <tr key={k} style={{ background: st?.on
@@ -255,29 +261,44 @@ export default function AccrualPage() {
                                         textUnderlineOffset: 3 })}>{MONEY(r.values[aIdx])}</td>
                         <td style={td({})}>{MONEY(r.total)}</td>
                         <td style={td({ textAlign: 'left' })}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          {isBlank ? (
+                            <span title="These GL lines have no vendor — there's no Sage vendor to accrue against"
+                                  style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--dim)' }}>
+                              no vendor
+                            </span>
+                          ) : (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                             <input type="checkbox" checked={!!st?.on} disabled={isCC}
                                    title={isCC ? 'Credit-card spend is already paid — nothing to accrue' : 'Accrue this vendor'}
                                    onChange={() => toggleRow(g.name, r.label, r.pay_type)}
                                    style={{ cursor: isCC ? 'not-allowed' : 'pointer' }} />
                             {st?.on && (
                               <>
-                                <input type="number" placeholder="amount" value={st.amount}
-                                       onChange={e => setField(k, 'amount', e.target.value)}
-                                       style={inp(100)} />
-                                <input type="text" placeholder="acct" value={st.acct || ''}
-                                       onChange={e => setField(k, 'acct', e.target.value)}
-                                       title="GL account (prefilled from history)" style={inp(64)} />
-                                <input type="text" placeholder="location" value={st.loc || ''}
-                                       onChange={e => setField(k, 'loc', e.target.value)}
-                                       title="Location ID (prefilled from history)" style={inp(96)} />
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>$</span>
+                                  <input type="number" placeholder="0.00" value={st.amount} autoFocus
+                                         onChange={e => setField(k, 'amount', e.target.value)}
+                                         style={inp(100)} />
+                                </span>
+                                <span title="Debit account and Sage location — set automatically from this vendor's posting history in the selected entity"
+                                      style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)',
+                                               whiteSpace: 'nowrap' }}>
+                                  {st.loading ? 'looking up acct/location…'
+                                    : st.acct ? `→ ${st.acct} @ ${st.loc}` : ''}
+                                </span>
                                 {st.vendor_valid === false && (
-                                  <span title="Not an active Sage vendor — export will flag this"
-                                        style={{ color: 'var(--warn)', fontSize: 11 }}>⚠</span>
+                                  <span title={'This vendor name is not in the Sage active-vendor list from your JE template, so the export would block this line. If the vendor IS active in Sage, the template\'s vendor list is out of date.'}
+                                        style={{ color: 'var(--warn)', fontSize: 10,
+                                                 border: '1px solid var(--warn)', borderRadius: 2,
+                                                 padding: '1px 6px', fontFamily: 'var(--mono)',
+                                                 whiteSpace: 'nowrap', cursor: 'help' }}>
+                                    ⚠ not in Sage vendor list
+                                  </span>
                                 )}
                               </>
                             )}
                           </span>
+                          )}
                         </td>
                       </tr>
                     )

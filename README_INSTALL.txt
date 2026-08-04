@@ -1,31 +1,34 @@
-FIX: ACCRUAL BUILDER SELECTORS DEAD / NO VENDOR TABLE
-======================================================
-Cause: the page called the trends API with its arguments in the wrong
-order (the function's first argument is an optional GL file), so every
-request was malformed and rejected - selectors rendered but nothing
-loaded. It also skipped the initial org-wide load that Expense Trends
-uses to populate the entity pills and month list.
+ACCRUAL BUILDER POLISH - all five items
+========================================
+SUPERSEDES accrual_warning_fix.zip - do NOT upload that one; everything
+in it is included here.
 
-Now it mirrors Expense Trends' data flow exactly:
-  - On open: entities + months load automatically
-  - Click an entity: its vendor table loads, grouped by GL group, with
-    clickable month numbers (reconciled drill-downs), TYPE chips, and
-    the accrue checkbox/amount/account/location controls
-  - A visible error card appears if anything fails (including a clear
-    message if the backend needs a Railway redeploy)
+1. HEADER: real ACCRUALS pixel logo built from the same canonical glyph
+   library as every other module (identical A/C/R/L/S glyphs; U derived
+   from the canonical O), same rain animation, same hover, with the
+   "Accrual Builder / experimental" subtitle.
+2. (BLANK) VENDORS: rows stay visible for context but show "no vendor"
+   instead of a checkbox - there is no Sage vendor to accrue against.
+3. NO FREE-FOR-ALL: the debit ACCOUNT and LOCATION are no longer typed.
+   They are set automatically from the vendor's posting history in the
+   SELECTED ENTITY and shown read-only as "-> 60100 @ LIB-96100".
+   Entity is a single labeled dropdown - one entity at a time, stated
+   right on the screen.
+4/5. INTUITIVE: the accrue column header says what to do ("ACCRUE -
+   CHECK & ENTER $"), the amount field is $-labeled and auto-focuses on
+   check, lookups show "looking up acct/location...", the Sage-vendor
+   warning is a readable chip, and the step hint explains the whole flow
+   in one line.
 
-DEPLOY (Netlify-only, 1 file):
-  1. Downloads -> right-click accrual_data_fix.zip -> "Extract All..."
-     -> "Browse..." to
+DEPLOY (Netlify-only, 3 files - 1 new):
+  1. Downloads -> right-click accrual_polish.zip -> "Extract All..." ->
+     "Browse..." to
      C:\Users\SannySahin\OneDrive - Caspers Company\Documents\GitHub\AP_REC
      -> "Select Folder" -> "Extract" -> "Yes" -> "Replace the files"
-  2. GitHub Desktop -> 1 changed file -> "Commit to main" -> "Push origin"
+  2. GitHub Desktop -> 3 changed files -> "Commit to main" -> "Push origin"
   3. ~1 min, then Ctrl+Shift+R.
 
-NOTE: if after this the accrual ACCOUNT dropdown is still empty or an
-error card mentions the backend, the backend from the accrual_builder
-batch isn't live yet: railway.app -> AP_REC -> "web" -> "Deployments"
--> "..." -> "Redeploy", wait for green, reload the site.
-
-Replaced file:
-  AP_REC\frontend\src\pages\AccrualPage.jsx
+Files:
+  NEW      AP_REC\frontend\src\components\AccrualLogo.jsx
+  replaced AP_REC\frontend\src\App.jsx
+  replaced AP_REC\frontend\src\pages\AccrualPage.jsx
