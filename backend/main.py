@@ -22,7 +22,8 @@ from trends_report import build_report
 from payroll_engine import (accrual as payroll_accrual, trends as payroll_trends,
                             rate_detail as payroll_rate_detail, cell_detail as payroll_cell_detail)
 from db import (init_db, get_session, User, store_gl, load_gl, delete_gl,
-                gl_overview, SessionLocal, USING_SQLITE)
+                gl_overview, get_accrual_draft, put_accrual_draft,
+                latest_credit_account, SessionLocal, USING_SQLITE)
 
 
 def _iso_utc(dt):
@@ -90,7 +91,7 @@ def require_auth(
     return user
 
 
-MODULES = ("aprec", "filenamer", "trends", "payroll")
+MODULES = ("aprec", "filenamer", "trends", "payroll", "accruals")
 
 
 def _perms(user: User):
@@ -664,6 +665,86 @@ async def trends_cardholder_detail_ep(
     finally:
         if tmp and os.path.exists(tmp):
             os.unlink(tmp)
+
+
+
+# ── Accrual Builder (experimental) ─────────────────────────────────────────
+from accrual_engine import (account_choices, row_defaults as accrual_row_defaults,
+                            build_je_csv)
+
+
+def _with_gl(db, user, fn):
+    stored = load_gl(db, user.id, scope="trends")   # same GL as Expense Trends
+    if not stored:
+        raise HTTPException(status_code=422, detail="No GL on file — upload one to begin")
+    _fn, csv_bytes, _up, _sc = stored
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
+            f.write(csv_bytes); tmp = f.name
+        return fn(tmp)
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+@app.get("/accrual/draft")
+def accrual_draft_get(entity: str, period: str,
+                      user: User = Depends(require_module("accruals")),
+                      db: Session = Depends(get_session)):
+    raw = get_accrual_draft(db, user.id, entity.upper(), period)
+    draft = json.loads(raw) if raw else {"rows": {}, "credit_acct": None}
+    if not draft.get("credit_acct"):
+        draft["credit_acct"] = latest_credit_account(db, user.id)
+    return draft
+
+
+@app.put("/accrual/draft")
+def accrual_draft_put(body: dict,
+                      user: User = Depends(require_module("accruals")),
+                      db: Session = Depends(get_session)):
+    entity = (body.get("entity") or "").upper()
+    period = body.get("period") or ""
+    if not entity or not period:
+        raise HTTPException(status_code=422, detail="entity and period required")
+    put_accrual_draft(db, user.id, entity, period,
+                      json.dumps({"rows": body.get("rows") or {},
+                                  "credit_acct": body.get("credit_acct")}))
+    return {"ok": True}
+
+
+@app.get("/accrual/accounts")
+def accrual_accounts(user: User = Depends(require_module("accruals")),
+                     db: Session = Depends(get_session)):
+    return _with_gl(db, user, lambda tmp: account_choices(tmp))
+
+
+@app.post("/accrual/rowinfo")
+def accrual_rowinfo(body: dict,
+                    user: User = Depends(require_module("accruals")),
+                    db: Session = Depends(get_session)):
+    return _with_gl(db, user, lambda tmp: accrual_row_defaults(
+        tmp, body.get("entity") or "", body.get("group") or "",
+        body.get("label") or "", body.get("period") or ""))
+
+
+@app.post("/accrual/export")
+def accrual_export(body: dict,
+                   user: User = Depends(require_module("accruals")),
+                   db: Session = Depends(get_session)):
+    def run(tmp):
+        try:
+            csv_bytes, fname, summary = build_je_csv(
+                tmp, body.get("entity") or "", body.get("period") or "",
+                body.get("credit_acct") or "", body.get("lines") or [],
+                credit_location=body.get("credit_location"))
+        except ValueError as ve:
+            raise HTTPException(status_code=422,
+                                detail={"validation_errors": ve.args[0]})
+        return Response(content=csv_bytes, media_type="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename={fname}",
+                                 "X-JE-Summary": json.dumps(summary)})
+    return _with_gl(db, user, run)
 
 
 if __name__ == "__main__":

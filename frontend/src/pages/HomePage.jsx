@@ -13,6 +13,7 @@ const MODULES = [
   { id: 'trends',    name: 'Expense Trends', desc: 'Vendor & credit-card expense analysis with flags' },
   { id: 'payroll',   name: 'Payroll',    desc: 'Month-end accrual calculator + payroll trends' },
   { id: 'filenamer', name: 'File Namer', desc: 'Rename invoice PDFs from their content' },
+  { id: 'accruals',  name: 'Accrual Builder', desc: 'Review AP spend and export month-end accrual JEs (experimental)' },
 ]
 
 export default function HomePage({ go }) {

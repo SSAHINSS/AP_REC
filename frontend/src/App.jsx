@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage'
 import HomePage from './pages/HomePage'
 import AppPage from './pages/AppPage'
 import FileNamerPage from './pages/FileNamerPage'
+import AccrualPage from './pages/AccrualPage'
 import TrendsPage from './pages/TrendsPage'
 import PayrollPage from './pages/PayrollPage'
 import Sidebar from './components/Sidebar'
@@ -170,6 +171,19 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
           </div>
         )}
 
+        {/* ACCRUAL BUILDER: text header (experimental module) */}
+        {page === 'accruals' && (
+          <div onClick={scrollTop} style={{ display: 'flex', alignItems: 'baseline', gap: 12,
+                                            cursor: 'pointer', userSelect: 'none' }}>
+            <span style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 22,
+                           letterSpacing: '0.06em', color: 'var(--ox)' }}>ACCRUAL BUILDER</span>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--warn)',
+                           border: '1px solid var(--warn)', borderRadius: 2, padding: '1px 6px' }}>
+              EXPERIMENTAL
+            </span>
+          </div>
+        )}
+
         {/* FILE-NMR: static left logo + subtitle */}
         {page === 'filenamer' && (
           <div
@@ -234,9 +248,10 @@ function SharedHeader({ page, onLogout, theme, onToggleTheme, onOpenUsers }) {
 
 const MODULE_DEFS = [
   { id: 'aprec',     label: 'AP Rec' },
-  { id: 'filenamer', label: 'File Namer' },
   { id: 'trends',    label: 'Expense Trends' },
   { id: 'payroll',   label: 'Payroll' },
+  { id: 'filenamer', label: 'File Namer' },
+  { id: 'accruals',  label: 'Accruals' },
 ]
 
 function UsersModal({ onClose }) {
@@ -459,7 +474,9 @@ export default function App() {
                 ? <FileNamerPage />
                 : page === 'payroll'
                   ? <PayrollPage />
-                  : <TrendsPage />
+                  : page === 'accruals'
+                    ? <AccrualPage />
+                    : <TrendsPage />
           }
         </div>
 

@@ -59,6 +59,52 @@ class GLFile(Base):
     __table_args__ = (UniqueConstraint("user_id", "scope", name="uq_gl_user_scope"),)
 
 
+class AccrualDraft(Base):
+    __tablename__ = "accrual_drafts"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    entity = Column(String(16), nullable=False)
+    period = Column(String(7), nullable=False)          # YYYY-MM
+    data = Column(LargeBinary, nullable=False)          # JSON (rows + credit acct)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    __table_args__ = (UniqueConstraint("user_id", "entity", "period",
+                                       name="uq_accrual_user_entity_period"),)
+
+
+def get_accrual_draft(db, user_id, entity, period):
+    row = (db.query(AccrualDraft)
+             .filter(AccrualDraft.user_id == user_id,
+                     AccrualDraft.entity == entity, AccrualDraft.period == period).first())
+    return row.data.decode() if row else None
+
+
+def put_accrual_draft(db, user_id, entity, period, data_json: str):
+    row = (db.query(AccrualDraft)
+             .filter(AccrualDraft.user_id == user_id,
+                     AccrualDraft.entity == entity, AccrualDraft.period == period).first())
+    if row:
+        row.data = data_json.encode()
+        row.updated_at = datetime.now(timezone.utc)
+    else:
+        db.add(AccrualDraft(user_id=user_id, entity=entity, period=period,
+                            data=data_json.encode()))
+    db.commit()
+
+
+def latest_credit_account(db, user_id):
+    """The user's most recently used credit account (any entity/period)."""
+    import json as _json
+    row = (db.query(AccrualDraft).filter(AccrualDraft.user_id == user_id)
+             .order_by(AccrualDraft.updated_at.desc()).first())
+    if not row:
+        return None
+    try:
+        return _json.loads(row.data.decode()).get("credit_acct") or None
+    except Exception:
+        return None
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     # Defensive migration: create_all doesn't ALTER existing tables, so add

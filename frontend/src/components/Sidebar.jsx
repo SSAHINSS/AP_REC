@@ -115,6 +115,27 @@ function IconPayroll({ active }) {
   )
 }
 
+function IconAccrual({ active }) {
+  const c = active ? '#FF7030' : '#8C7B6A'
+  return (
+    <svg width="28" height="28" viewBox="0 0 28 28" shapeRendering="crispEdges" xmlns="http://www.w3.org/2000/svg">
+      {/* ledger box */}
+      <rect x="4" y="4" width="20" height="2" fill={c}/>
+      <rect x="4" y="22" width="20" height="2" fill={c}/>
+      <rect x="4" y="4" width="2" height="20" fill={c}/>
+      <rect x="22" y="4" width="2" height="20" fill={c}/>
+      {/* check mark */}
+      <rect x="8" y="14" width="2" height="2" fill={c}/>
+      <rect x="10" y="16" width="2" height="2" fill={c}/>
+      <rect x="12" y="14" width="2" height="2" fill={c}/>
+      <rect x="14" y="12" width="2" height="2" fill={c}/>
+      <rect x="16" y="10" width="2" height="2" fill={c}/>
+      {/* amount line */}
+      <rect x="8" y="19" width="12" height="1" fill={c}/>
+    </svg>
+  )
+}
+
 export default function Sidebar({ page, setPage }) {
   const perms = getPerms()
   const items = [
@@ -123,6 +144,7 @@ export default function Sidebar({ page, setPage }) {
     { id: 'trends',    label: 'Expense Trends',       Icon: IconTrends },
     { id: 'payroll',   label: 'Payroll',      Icon: IconPayroll },
     { id: 'filenamer', label: 'File Namer',   Icon: IconFileNamer },
+    { id: 'accruals',  label: 'Accrual Builder', Icon: IconAccrual },
   ].filter(it => it.id === 'home' || perms.includes(it.id))
 
   return (

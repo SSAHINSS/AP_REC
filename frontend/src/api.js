@@ -316,3 +316,37 @@ export async function deleteGlOverride(scope) {
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Revert failed')
   return res.json()
 }
+
+export function accrualDraftGet(entity, period) {
+  return authedJson(`/accrual/draft?entity=${encodeURIComponent(entity)}&period=${encodeURIComponent(period)}`)
+}
+export function accrualDraftPut(body) {
+  return authedJson('/accrual/draft', { method: 'PUT', body: JSON.stringify(body) })
+}
+export function accrualAccounts() { return authedJson('/accrual/accounts') }
+export function accrualRowinfo(body) {
+  return authedJson('/accrual/rowinfo', { method: 'POST', body: JSON.stringify(body) })
+}
+export async function accrualExport(body) {
+  const res = await fetch(`${BASE}/accrual/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify(body),
+  })
+  checkAuth(res)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    const ex = new Error(err.detail?.validation_errors ? 'Validation failed' : (err.detail || 'Export failed'))
+    if (err.detail?.validation_errors) ex.validationErrors = err.detail.validation_errors
+    throw ex
+  }
+  const blob = await res.blob()
+  const cd = res.headers.get('Content-Disposition') || ''
+  const fname = (cd.match(/filename=([^;]+)/) || [])[1] || 'JE_Import.csv'
+  const url = URL.createObjectURL(blob)
+  const aEl = document.createElement('a')
+  aEl.href = url; aEl.download = fname.trim()
+  document.body.appendChild(aEl); aEl.click(); aEl.remove()
+  URL.revokeObjectURL(url)
+  return { filename: fname }
+}
