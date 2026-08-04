@@ -82,7 +82,12 @@ def init_db():
     for stmt in (
         "ALTER TABLE gl_files ADD COLUMN scope VARCHAR(16) DEFAULT 'shared'",
         "UPDATE gl_files SET scope = 'shared' WHERE scope IS NULL",
-        "ALTER TABLE gl_files DROP CONSTRAINT gl_files_user_id_key",       # postgres old unique
+        # The old one-GL-per-user rule can exist under either name depending on
+        # how the table was created — remove BOTH forms:
+        "ALTER TABLE gl_files DROP CONSTRAINT gl_files_user_id_key",
+        "DROP INDEX IF EXISTS ix_gl_files_user_id",
+        # restore a plain (non-unique) index for lookup speed
+        "CREATE INDEX IF NOT EXISTS ix_gl_files_user_id ON gl_files (user_id)",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_gl_user_scope ON gl_files (user_id, scope)",
     ):
         try:
