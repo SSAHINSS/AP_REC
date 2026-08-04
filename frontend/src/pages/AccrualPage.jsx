@@ -68,8 +68,28 @@ export default function AccrualPage() {
       const per = p || t.period
       if (!p) setPeriod(t.period)
       const draft = await accrualDraftGet(e, per)
-      setRows(draft.rows || {})
+      const loaded = draft.rows || {}
+      setRows(loaded)
       if (draft.credit_acct) setCreditAcct(draft.credit_acct)
+      // Refresh validation for rows saved as checked — a draft can carry stale
+      // acct/location/vendor verdicts from before a rules or GL change.
+      const checked = Object.entries(loaded).filter(([, r]) => r.on)
+      if (checked.length) {
+        Promise.all(checked.map(async ([k, r]) => {
+          const [grp, label] = k.split('::')
+          try {
+            const info = await accrualRowinfo({ entity: e, group: grp, label, period: per })
+            return [k, { ...r, acct: info.acct_no, loc: info.location_id,
+                         vendor_valid: info.vendor_valid }]
+          } catch { return [k, r] }
+        })).then(pairs => {
+          setRows(prev => {
+            const nx = { ...prev }
+            for (const [k, v] of pairs) if (nx[k]?.on) nx[k] = { ...v, amount: nx[k].amount }
+            return nx
+          })
+        })
+      }
     } catch (err) {
       if ((err.message || '').includes('No GL')) setNoGl(true)
       else setError(err.message)
@@ -91,22 +111,22 @@ export default function AccrualPage() {
   async function toggleRow(g, label, payType) {
     const k = rowKey(g, label)
     const cur = rows[k]
-    let next
     if (cur?.on) {
-      next = { ...rows, [k]: { ...cur, on: false } }
-    } else if (cur) {
-      next = { ...rows, [k]: { ...cur, on: true } }
-    } else {
-      // first check: fetch Sage-validated defaults for account/location/vendor
-      next = { ...rows, [k]: { on: true, amount: '', acct: '', loc: '', loading: true } }
+      const next = { ...rows, [k]: { ...cur, on: false } }
       setRows(next); scheduleSave(next, creditAcct)
-      try {
-        const info = await accrualRowinfo({ entity, group: g, label, period })
-        next = { ...next, [k]: { on: true, amount: '', acct: info.acct_no,
-                                 loc: info.location_id, vendor_valid: info.vendor_valid } }
-      } catch {
-        next = { ...next, [k]: { on: true, amount: '', acct: '', loc: '' } }
-      }
+      return
+    }
+    // Turning ON: ALWAYS (re)fetch account/location/vendor validation from the
+    // backend — cached verdicts go stale when validation rules or the GL change.
+    // The typed amount is preserved.
+    let next = { ...rows, [k]: { ...(cur || {}), amount: cur?.amount ?? '', on: true, loading: true } }
+    setRows(next); scheduleSave(next, creditAcct)
+    try {
+      const info = await accrualRowinfo({ entity, group: g, label, period })
+      next = { ...next, [k]: { on: true, amount: cur?.amount ?? '', acct: info.acct_no,
+                               loc: info.location_id, vendor_valid: info.vendor_valid } }
+    } catch {
+      next = { ...next, [k]: { on: true, amount: cur?.amount ?? '', acct: cur?.acct || '', loc: cur?.loc || '' } }
     }
     setRows(next); scheduleSave(next, creditAcct)
   }
@@ -289,7 +309,7 @@ export default function AccrualPage() {
                               <>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                   <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>$</span>
-                                  <input type="text" inputMode="decimal" placeholder="0.00 or 40*4"
+                                  <input type="text" inputMode="decimal" placeholder="0.00"
                                          value={st.amount} autoFocus
                                          title="Type a number or quick math (40*4, (1200+80)/2) — Enter computes it"
                                          onChange={e => setField(k, 'amount', e.target.value)}
