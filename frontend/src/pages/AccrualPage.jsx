@@ -32,15 +32,26 @@ export default function AccrualPage() {
   const saveTimer = useRef(null)
 
   useEffect(() => {
+    // Seed entity pills + month list exactly like Expense Trends: one
+    // org-wide analyze on mount. The table itself waits for an entity.
+    analyzeTrends(null, '', 'vendor', '')
+      .then(t => { setData(t); setPeriod(t.period || '') })
+      .catch(e => {
+        if ((e.message || '').includes('No GL')) setNoGl(true)
+        else setError(e.message)
+      })
     accrualAccounts().then(setAccounts).catch(e => {
-      if ((e.message || '').includes('No GL')) setNoGl(true)
+      const msg = e.message || ''
+      if (msg.includes('No GL')) setNoGl(true)
+      else if (msg.includes('Not Found') || msg.includes('404'))
+        setError('Backend not updated yet — Railway: web → Deployments → ⋮ → Redeploy, then reload.')
     })
   }, [])
 
   async function loadEntity(e, p) {
     setLoading(true); setError(''); setExportErrors([])
     try {
-      const t = await analyzeTrends(e, 'vendor', p || '')
+      const t = await analyzeTrends(null, e, 'vendor', p || '')
       setData(t)
       const per = p || t.period
       if (!p) setPeriod(t.period)
@@ -149,9 +160,10 @@ export default function AccrualPage() {
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
             <span style={lbl}>1 · Entity</span>
-            {(data?.entities || ['LIB','OE','SH','MAD','PRED','WRI','JTS','ODS','OCMGT','CHCO','RRT','CSC','MACD']).map(e => (
+            {(data?.entities || []).map(e => (
               <button key={e} onClick={() => pickEntity(e)} style={pill(entity === e)}>{e}</button>
             ))}
+            {!data && !noGl && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>loading entities…</span>}
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={lbl}>Close Month</span>
@@ -172,6 +184,19 @@ export default function AccrualPage() {
       )}
 
       {/* Step 3: review table */}
+      {data && !entity && !noGl && (
+        <div className="card" style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>
+          Pick an entity above to load its vendors — accrual JEs are built one entity at a time.
+        </div>
+      )}
+
+      {error && (
+        <div className="card" style={{ border: '1px solid var(--err)',
+                                       fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--err)' }}>
+          {error}
+        </div>
+      )}
+
       {data && !data.error && entity && (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '12px 16px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
