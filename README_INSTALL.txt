@@ -1,30 +1,33 @@
-FIX: STALE "NOT IN SAGE" WARNING + PLACEHOLDER CLEANUP
-=======================================================
-1. TRADECRAFT (and any row flagged before the validation fix): the
-   warning verdict was CACHED in your saved draft, and re-checking a row
-   reused the cache instead of asking the backend again - so no backend
-   fix could reach it. Now: every time a row is checked it re-validates
-   fresh, and saved drafts re-validate all checked rows on load. Stale
-   verdicts cannot survive.
-2. The amount field placeholder is just "0.00" again. The quick-math
-   capability (40*4 -> 160) still works - it's explained in the hint
-   line and the field tooltip, not shouted from the placeholder.
+FIX: ACCRUAL ACCOUNT SELECTOR EMPTY
+====================================
+Root cause (measured): your live GL export is expense-focused and
+contains ZERO 3xxxx liability accounts - so under GL-only validation
+the credit dropdown had nothing to list. (It only "worked" earlier
+because choices came from the template list we removed.)
 
-IMPORTANT: this fix works ONLY if the backend from gl_only_validation
-is actually live. Verify: railway.app -> AP_REC -> "web" ->
-"Deployments" -> newest shows green "Success" AFTER your
-gl_only_validation push. If unsure: "..." -> "Redeploy". A stale
-backend keeps producing the old verdicts no matter what the frontend
-does.
+Fix - the credit account is the controller's deliberate choice, the one
+field the GL legitimately can't testify about:
+  - GL has 3xxxx accounts -> dropdown (as before), and a remembered
+    account not in the list still shows as "(remembered)"
+  - GL has none -> a strict 5-digit account input with an explanation,
+    remembered exactly like the dropdown selection
+  - Export requires a well-formed 5-digit credit account; per-row debit
+    accounts/locations remain GL-derived and GL-validated as before
 
-DEPLOY (Netlify-only, 1 file):
-  1. Downloads -> right-click accrual_revalidate.zip -> "Extract All..."
+Verified on both GL shapes: newer export -> input mode, typed 30100
+exports a balanced JE; malformed "301" is blocked; older full export ->
+50-account dropdown.
+
+DEPLOY (backend + frontend, 2 files):
+  1. Downloads -> right-click credit_selector_fix.zip -> "Extract All..."
      -> "Browse..." to
      C:\Users\SannySahin\OneDrive - Caspers Company\Documents\GitHub\AP_REC
      -> "Select Folder" -> "Extract" -> "Yes" -> "Replace the files"
-  2. GitHub Desktop -> 1 changed file -> "Commit to main" -> "Push origin"
-  3. ~1 min, Ctrl+Shift+R, reopen the entity - TradeCraft's flag clears
-     on load (or on next check).
+  2. GitHub Desktop -> 2 changed files -> "Commit to main" -> "Push origin"
+  3. Backend changed: wait ~2 min; if the selector is still empty,
+     railway.app -> AP_REC -> "web" -> "Deployments" -> "..." ->
+     "Redeploy". Then Ctrl+Shift+R.
 
-Replaced file:
-  AP_REC\frontend\src\pages\AccrualPage.jsx
+Files:
+  replaced AP_REC\backend\accrual_engine.py
+  replaced AP_REC\frontend\src\pages\AccrualPage.jsx

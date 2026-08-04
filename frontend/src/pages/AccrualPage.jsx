@@ -206,12 +206,28 @@ export default function AccrualPage() {
               {(data?.available_months || []).slice().reverse().map(m => <option key={m} value={m}>{m}</option>)}
             </select>
             <span style={{ ...lbl, marginLeft: 18 }}>2 · Accrue to (credit)</span>
-            <select value={creditAcct || ''} onChange={e => setCredit(e.target.value)} style={sel}>
-              <option value="">— select account —</option>
-              {accounts.map(a => (
-                <option key={a.account} value={a.account}>{a.account} {a.title}</option>
-              ))}
-            </select>
+            {accounts.length > 0 ? (
+              <select value={creditAcct || ''} onChange={e => setCredit(e.target.value)} style={sel}>
+                <option value="">— select account —</option>
+                {creditAcct && !accounts.some(a => a.account === creditAcct) && (
+                  <option value={creditAcct}>{creditAcct} (remembered)</option>
+                )}
+                {accounts.map(a => (
+                  <option key={a.account} value={a.account}>{a.account} {a.title}</option>
+                ))}
+              </select>
+            ) : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <input type="text" inputMode="numeric" placeholder="e.g. 30100" maxLength={5}
+                       value={creditAcct || ''}
+                       onChange={e => setCredit(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                       title="The liability account the accrual credits (5-digit Sage account number)"
+                       style={{ ...sel, width: 110 }} />
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>
+                  5-digit accrual account — your GL export has no 3xxxx accounts to list
+                </span>
+              </span>
+            )}
             {loading && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>loading…</span>}
             {error && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--err)' }}>{error}</span>}
           </div>
@@ -368,7 +384,7 @@ export default function AccrualPage() {
           <span>credit → {creditAcct || '—'}</span>
           <span style={{ flex: 1 }} />
           <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ox)' }}>${MONEY(accrualTotal)}</span>
-          <button className="btn btn-primary" disabled={exporting || !activeLines.length || !creditAcct}
+          <button className="btn btn-primary" disabled={exporting || !activeLines.length || !/^\d{5}$/.test(creditAcct || '')}
                   onClick={doExport}>
             {exporting ? 'Building…' : `Export JE CSV — ${entity} ${period}`}
           </button>

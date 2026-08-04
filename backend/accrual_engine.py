@@ -5,6 +5,7 @@ JE import CSV, validated line-by-line against the ERP's own reference lists
 Path: backend/accrual_engine.py
 """
 import calendar
+import re as _re
 import csv
 import io
 import json
@@ -113,8 +114,11 @@ def build_je_csv(gl_path, entity, period, credit_acct, lines, credit_location=No
     problems = []
     if not lines:
         problems.append("No accrual lines selected.")
-    if str(credit_acct) not in ref["accounts"]:
-        problems.append(f"Credit account {credit_acct!r} does not appear in your GL.")
+    # The credit (accrual) account is the controller's deliberate choice and may
+    # legitimately never appear in an expense-filtered GL export — so the rule
+    # here is format, not GL membership: exactly 5 digits.
+    if not _re.match(r"^\d{5}$", str(credit_acct or "").strip()):
+        problems.append(f"Credit account {credit_acct!r} must be a 5-digit account number.")
     clean = []
     for i, ln in enumerate(lines, 1):
         label = str(ln.get("label") or "").strip()
