@@ -341,8 +341,13 @@ export async function accrualExport(body) {
     throw ex
   }
   const blob = await res.blob()
-  const cd = res.headers.get('Content-Disposition') || ''
-  const fname = (cd.match(/filename=([^;]+)/) || [])[1] || 'JE_Import.csv'
+  // Build the filename client-side: the server's name lives in a header that
+  // cross-origin JS can't read. Entity + close month + export timestamp makes
+  // every download unique, including re-exports of the same month.
+  const now = new Date()
+  const p2 = n => String(n).padStart(2, '0')
+  const stamp = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}_${p2(now.getHours())}${p2(now.getMinutes())}`
+  const fname = `JE_Import_${(body.entity || 'ENT').toUpperCase()}_${body.period || 'period'}_exported_${stamp}.csv`
   const url = URL.createObjectURL(blob)
   const aEl = document.createElement('a')
   aEl.href = url; aEl.download = fname.trim()
