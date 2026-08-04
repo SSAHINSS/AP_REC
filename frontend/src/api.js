@@ -64,7 +64,7 @@ async function authedJson(path, opts = {}) {
 
 // ── User management (admin) ──
 export function listUsers()            { return authedJson('/users') }
-export function createUser(email, password, isAdminFlag = false) {
+export function createUser(email, password, isAdminFlag = false, permissions = null) {
   return authedJson('/users', { method: 'POST', body: JSON.stringify({ email, password, is_admin: isAdminFlag, permissions }) })
 }
 export function deleteUser(id)         { return authedJson(`/users/${id}`, { method: 'DELETE' }) }

@@ -269,9 +269,8 @@ function UsersModal({ onClose }) {
   }
   async function togglePerm(u, mod) {
     setErr(''); setMsg('')
-    const next = u.permissions.includes(mod)
-      ? u.permissions.filter(p => p !== mod)
-      : [...u.permissions, mod]
+    const cur = u.permissions || []
+    const next = cur.includes(mod) ? cur.filter(p => p !== mod) : [...cur, mod]
     try { await updateUser(u.id, { permissions: next }); refresh() }
     catch (e) { setErr(e.message) }
   }
@@ -330,7 +329,7 @@ function UsersModal({ onClose }) {
                 {MODULE_DEFS.map(m => (
                   <td key={m.id} style={utd({})}>
                     <input type="checkbox"
-                           checked={u.is_admin || u.permissions.includes(m.id)}
+                           checked={u.is_admin || (u.permissions || []).includes(m.id)}
                            disabled={u.is_admin}
                            title={u.is_admin ? 'Admins always have every module' : `Toggle ${m.label}`}
                            onChange={() => togglePerm(u, m.id)}
