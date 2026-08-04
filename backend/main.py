@@ -550,6 +550,8 @@ async def trends_detail_ep(
     month: str = Form(""),
     period: str = Form(""),
     comparisons: str = Form(""),
+    group: str = Form(""),
+    include_sales: bool = Form(False),
     user: User = Depends(require_module("trends")),
     db: Session = Depends(get_session),
 ):
@@ -564,7 +566,8 @@ async def trends_detail_ep(
             f.write(csv_bytes); tmp = f.name
         return trends_detail_fn(tmp, label, view=view, entity=entity or None,
                                 month=month or None, period=period or None,
-                                comparisons=cmps)
+                                comparisons=cmps, group=group or None,
+                                include_sales=include_sales)
     except HTTPException:
         raise
     except Exception as e:

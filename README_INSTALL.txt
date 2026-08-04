@@ -1,27 +1,34 @@
-FIX: "duplicate key ... ix_gl_files_user_id" WHEN RECONCILING
-==============================================================
-(Silver lining: this error means POSTGRES IS LIVE - data now persists.)
+FIX: DRILL-DOWN NOW RECONCILES EXACTLY TO THE CLICKED NUMBER
+=============================================================
+Cause: a vendor can appear in several GL groups (e.g. Gordon in Food COS
+and other groups). The drill-down filtered by vendor + entity + month but
+IGNORED the GL group of the clicked row - so it showed the vendor's
+transactions across ALL groups and didn't tie to the cell.
 
-Cause: the old one-GL-per-user database rule existed as a unique INDEX
-(ix_gl_files_user_id); the scope migration only removed it under its
-CONSTRAINT name, so attaching a GL (which stores a second, AP-Rec-scoped
-row) hit the leftover rule and failed.
+Now the clicked row's GL group travels with the click:
+  - Specific group selected: drill shows ONLY that group's line items and
+    the total equals the clicked number to the penny
+  - "ALL GROUPS" view: drill matches the merged number exactly
+  - Row TOTAL and period comparisons reconcile the same way
+  - The popup title now states the group so the scope is explicit
 
-Fix: the migration now removes the rule under BOTH names, restores a
-plain lookup index, and keeps the correct per-(user, scope) rule.
-Runs automatically at boot; safe to re-run; no data is touched.
-Reproduced the exact failure and verified it now succeeds.
+Proven numerically: Gordon Food Service LIB June - Food COS cell
+$40,828.44 -> drill $40,828.44 (previously showed $46,319.36, the
+cross-group total). Row TOTAL, ALL-mode, and prior-period comparison all
+verified equal to the penny.
 
-DEPLOY (backend-only, 1 file):
-  1. Downloads -> right-click gl_migration_fix.zip -> "Extract All..."
+DEPLOY (backend + frontend):
+  1. Downloads -> right-click drill_reconcile_fix.zip -> "Extract All..."
      -> "Browse..." to
      C:\Users\SannySahin\OneDrive - Caspers Company\Documents\GitHub\AP_REC
      -> "Select Folder" -> "Extract" -> "Yes" -> "Replace the files"
-  2. GitHub Desktop -> 1 changed file -> "Commit to main" -> "Push origin"
-  3. Wait ~2 min for Railway. If the same error appears after that:
+  2. GitHub Desktop -> 4 changed files -> "Commit to main" -> "Push origin"
+  3. Backend changed: wait ~2 min; if drill totals still don't tie,
      railway.app -> AP_REC -> "web" box -> "Deployments" -> "..." ->
-     "Redeploy" (the fix runs at boot, so a fresh boot is required).
-  4. Have the user retry their reconciliation - no other action needed.
+     "Redeploy". Then Ctrl+Shift+R.
 
-Replaced file:
-  AP_REC\backend\db.py
+Files:
+  replaced AP_REC\backend\trends_engine.py
+  replaced AP_REC\backend\main.py
+  replaced AP_REC\frontend\src\pages\TrendsPage.jsx
+  replaced AP_REC\frontend\src\components\DetailWindow.jsx

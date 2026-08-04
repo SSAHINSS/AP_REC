@@ -652,18 +652,26 @@ def _period_offsets(base_month, comparisons):
 
 
 def detail(gl_path, label, view="vendor", entity=None, month=None, period=None,
-           comparisons=None):
+           comparisons=None, group=None, include_sales=False):
     """
     Every transaction behind one table number, plus optional comparison periods.
       label       : the row's vendor name or account title
       month       : "YYYY-MM" for a single cell; None/"" = the row TOTAL (window)
+      group       : the GL group of the CLICKED ROW — the detail must reconcile
+                    to exactly the clicked number, so it filters to that group.
+                    None/"" = the "ALL GROUPS" merged view: mirror analyze() by
+                    restricting to the same displayed group set.
       comparisons : list of "prior_period" | "same_last_year" | "two_prior"
-                    (only meaningful when `month` is a single period)
     Returns the primary slice plus a `comparisons` list of the same shape.
     """
     df = load_gl(gl_path)
     if entity:
         df = df[df["Entity"] == entity.upper()]
+    if group:
+        df = df[df["Group"] == group]
+    else:
+        shown = [g for g in GROUP_ORDER if include_sales or g not in SALES_GROUPS]
+        df = df[df["Group"].isin(shown)]
     key = "Vendor name" if view == "vendor" else "Account title"
     df = df[df[key].astype(str) == str(label)]
 

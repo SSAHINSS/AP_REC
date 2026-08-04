@@ -68,9 +68,11 @@ export default function TrendsPage() {
   const [mode,    setMode]      = useState('trends')  // 'trends' | 'cards'
   const [exporting, setExporting] = useState(false)
 
-  function openDetail(label, monthOrTotal) {
+  function openDetail(label, monthOrTotal, rowGroup) {
     setWin({
       label, view, entity,
+      // the clicked row's GL group — the drill-down reconciles to THIS cell
+      group: rowGroup || (group === ALL ? '' : group),
       month: monthOrTotal === 'total' ? '' : months[monthOrTotal],
       period: data?.period || '',
       _k: `${label}:${monthOrTotal}:${Date.now()}`,

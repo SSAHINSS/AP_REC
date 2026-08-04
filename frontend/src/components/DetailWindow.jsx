@@ -132,6 +132,7 @@ export default function DetailWindow({ req, onClose }) {
       } else {
         d = await trendsDetail({
           label: req.label, view: req.view, entity: req.entity,
+          group: req.group || '',
           month: req.month, period: req.period, comparisons: cmps.join(','),
         })
       }
@@ -192,7 +193,7 @@ export default function DetailWindow({ req, onClose }) {
         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>
           {req.kind === 'cardholder'
             ? (req.title || '')
-            : `${req.entity || 'all entities'}${req.month ? ` · ${req.month}` : ' · full window'}`}
+            : `${req.group ? `${req.group} · ` : ''}${req.entity || 'all entities'}${req.month ? ` · ${req.month}` : ' · full window'}`}
         </span>
         <span style={{ flex: 1 }} />
         <button onClick={() => setMinimized(m => !m)} title="Minimize" style={winBtn}>{minimized ? '▢' : '—'}</button>
