@@ -154,8 +154,10 @@ UPLOAD_DIR = Path(tempfile.mkdtemp())
 # ── Health ─────────────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
+    from reconciliation_engine import ENGINE_VERSION
     return {"status": "ok",
-            "db": "sqlite (add Postgres for persistence)" if USING_SQLITE else "postgres"}
+            "db": "sqlite (add Postgres for persistence)" if USING_SQLITE else "postgres",
+            "engine": ENGINE_VERSION, "build": "2026-11-20-accruals-v2"}
 
 # ── Auth ───────────────────────────────────────────────────────────────────
 @app.post("/auth")
