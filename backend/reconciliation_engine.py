@@ -14,7 +14,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-ENGINE_VERSION = "v6.1-ocr-bushbros-sourcebooks"
+ENGINE_VERSION = "v7.0-nov26-vendor-batch"
 print(f"[reconciliation_engine] loaded {ENGINE_VERSION}")
 
 # ── Mappings ─────────────────────────────────────────────────────────────────
@@ -47,6 +47,13 @@ VM = {
     "SAMUELS":"Samuels and Son Seafood South Coast LLC",
     "WRI":"WRIGHTS GOURMET HOUSE",
     "COZZINI":"Cozzini Bros. Inc",
+    "EMERGENCY PEST":"Emergency Pest Control LLC",
+    "DF BAKERY":"DOUCE FRANCE BAKERY INC",
+    "OTT":"OVER THE TOP INC",
+    "SHOES FOR CREWS":"Shoes For Crews LLC",
+    "CLARK SERV":"CLARK SERVICE GROUP INC","CLARK":"CLARK SERVICE GROUP INC",
+    "LULU STATEMENT":"Lululemon USA Inc","LULU":"Lululemon USA Inc","LULULEMON":"Lululemon USA Inc",
+    "RTI":"Restaurant Technologies Inc.","RESTAURANT TECH":"Restaurant Technologies Inc.",
     "NORTON":"W. W. Norton & Company Inc",
     "WW NORTON":"W. W. Norton & Company Inc",
 }
@@ -120,6 +127,28 @@ def find_statement_total(text):
         except:
             return None
 
+    # P0: Signed labelled totals — credit balances are real (Clark, RTI, Shoes)
+    def try_float_signed(s):
+        s = str(s).strip()
+        neg = (s.startswith("(") and s.endswith(")")) or s.lstrip("$").startswith("-")
+        s = s.strip("()").replace(",", "").replace("$", "").lstrip("-").strip()
+        try:
+            v = float(s)
+            return -v if neg else v
+        except:
+            return None
+    signed = [
+        (r"PLEASE\s+PAY\s+THIS\s+AMOUNT\s*:?\s*\$?\s*(\(?-?[\d,]+\.\d{2}\)?)", "PLEASE PAY THIS AMOUNT"),
+        (r"Total\s+Balance\s+Due:?\s*\$?\s*(\(?-?[\d,]+\.\d{2}\)?)",             "Total Balance Due"),
+        (r"Balance\s+Due:\s*(\(?-?[\d,]+\.\d{2}\)?)",                               "Balance Due:"),
+    ]
+    for pat, label in signed:
+        m = re.search(pat, text, re.I)
+        if m:
+            v = try_float_signed(m.group(1))
+            if v is not None and v != 0:
+                return v, label
+
     # P1: Explicit labelled totals — highest confidence
     labelled = [
         (r"Amount\s+Due:\s*([\d,]+\.\d{2})",                                               "Amount Due:"),
@@ -133,7 +162,7 @@ def find_statement_total(text):
         # Bush Brothers: "Total Due $13,836.67" in a bordered box (may have spacing)
         (r"Total\s+Due\s+\$?([\d,]+\.\d{2})",                                              "Total Due box"),
         # Source Books: "Total $ 1,008.50" (space after $, no colon)
-        (r"Total\s+\$\s*([\d,]+\.\d{2})",                                                  "Total $ amount"),
+        (r"\bTotal\s+\$\s*([\d,]+\.\d{2})",                                               "Total $ amount"),
         # NEW: end-of-document grand totals (US Paper "TOTAL $X $X", CW "BALANCE DUE 13,450.33")
         (r"^\s*TOTAL\s+\$?([\d,]+\.\d{2})\s+\$?[\d,]+\.\d{2}\s*$",                         "Grand TOTAL line"),
         (r"BALANCE\s+DUE\s+\$?([\d,]+\.\d{2})",                                           "BALANCE DUE"),
@@ -141,6 +170,15 @@ def find_statement_total(text):
         (r"Statement\s+Total:?\s*\$?([\d,]+\.\d{2})",                                     "Statement Total"),
         (r"Current\s+Balance:?\s*\$?([\d,]+\.\d{2})",                                     "Current Balance"),
         (r"Outstanding\s+Balance:?\s*\$?([\d,]+\.\d{2})",                                 "Outstanding Balance"),
+        # CKS "Statement of Account" format
+        (r"Net\s+Balance\s+\$?([\d,]+\.\d{2})",                                           "Net Balance"),
+        (r"Total\s+Outstanding\s+Invoices\s+\$?([\d,]+\.\d{2})",                          "Total Outstanding Invoices"),
+        # GFS open-items statement
+        (r"TOTAL\s+OPEN\s+AMOUNT\s+\$?([\d,]+\.\d{2})",                                  "TOTAL OPEN AMOUNT"),
+        # Edward Don "Account Balance\n850.70 USD"
+        (r"Account\s+Balance\s*\n\s*([\d,]+\.\d{2})\s*USD",                              "Account Balance USD"),
+        # Emergency Pest bottom box "Amount Due $267.50" (no colon)
+        (r"Amount\s+Due\s+\$([\d,]+\.\d{2})",                                             "Amount Due $"),
     ]
     for pat, label in labelled:
         m = re.search(pat, text, re.I | re.M)
@@ -688,10 +726,268 @@ def parse_amazon_xl(fp):
 
 
 # All vendors route through parse_generic now
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  DEDICATED FORMAT PARSERS — Nov 2026 batch (Jasmine's problem statements)
+#  Row schema: {"Date": str, "Invoice": str, "Amount": float, "Type": str}
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _amt(s):
+    s = str(s).strip()
+    neg = (s.startswith("(") and s.endswith(")")) or s.lstrip("$").startswith("-")
+    s = s.strip("()").replace(",", "").replace("$", "").lstrip("-").strip()
+    try:
+        v = float(s)
+        return -v if neg else v
+    except:
+        return None
+
+
+def parse_cks(t):
+    """CKS 'Statement of Account':
+      INV4891914 2026-10-14 2026-11-04 $264.21     (open invoices)
+      CM400478409 2026-10-20 ($135.90)             (available credits)"""
+    rows = []
+    for m in re.finditer(r"^(INV\d+)\s+(\d{4}-\d{2}-\d{2})\s+\d{4}-\d{2}-\d{2}\s+(\(?\$?-?[\d,]+\.\d{2}\)?)\s*$",
+                         t, re.M):
+        v = _amt(m.group(3))
+        if v is None: continue
+        rows.append({"Date": m.group(2), "Invoice": m.group(1), "Amount": v,
+                     "Type": "Credit Memo" if v < 0 else "Invoice"})
+    for m in re.finditer(r"^(CM\d+)\s+(\d{4}-\d{2}-\d{2})\s+\((\$?[\d,]+\.\d{2})\)\s*$", t, re.M):
+        v = _amt(m.group(3))
+        if v is None: continue
+        rows.append({"Date": m.group(2), "Invoice": m.group(1), "Amount": -abs(v),
+                     "Type": "Credit Memo"})
+    return rows
+
+
+def parse_df_bakery(t):
+    """Douce France QuickBooks open balance: 10/24/2026 *984269* 10/31/2026 12.20"""
+    rows = []
+    for m in re.finditer(r"^(\d{1,2}/\d{1,2}/\d{4})\s+\*?(\d{4,})\*?\s+\d{1,2}/\d{1,2}/\d{4}\s+(\(?-?[\d,]+\.\d{2}\)?)\s*$",
+                         t, re.M):
+        v = _amt(m.group(3))
+        if v is None: continue
+        rows.append({"Date": m.group(1), "Invoice": m.group(2), "Amount": v,
+                     "Type": "Credit Memo" if v < 0 else "Invoice"})
+    return rows
+
+
+def parse_emergency_pest(t):
+    """Emergency Pest invoice rows:
+    244365 $250.00 $17.50 (7%) $0.00 $267.50 $0.00 $267.50
+    INVOICE# PRICE TAX (pct) DISCOUNT BILLED PAID BALANCE — amount = BILLED (with tax),
+    which is what the GL books. Jasmine's exact complaint was pre-tax amounts."""
+    rows = []
+    for m in re.finditer(
+        r"^(\d{4,})\s+\$([\d,]+\.\d{2})\s+\$([\d,]+\.\d{2})\s+\([\d.]+%\)\s+"
+        r"\(?\$?([\d,]+\.\d{2})\)?\s+\$([\d,]+\.\d{2})\s+\$([\d,]+\.\d{2})\s+\$([\d,]+\.\d{2})",
+        t, re.M):
+        v = _amt(m.group(5))   # BILLED (with tax — what the GL books)
+        if v is None: continue
+        rows.append({"Date": "", "Invoice": m.group(1), "Amount": v, "Type": "Invoice"})
+        paid = _amt(m.group(6))
+        if paid and paid > 0:
+            rows.append({"Date": "", "Invoice": f"{m.group(1)}-PAID", "Amount": -paid,
+                         "Type": "Payment"})
+    return rows
+
+
+def parse_ott(t):
+    """Over The Top (Point-of-Rental) statement rows:
+    224047 Closed 10/29/2026 121.36 0.00 0.00 121.36 0.00 121.36
+    INVOICE STATUS DATE SUBTOTAL PCT TAX TOTAL PAID BALANCE — amount = TOTAL."""
+    rows = []
+    for m in re.finditer(
+        r"^(\d{5,7})\s+(?:Closed|Open|Partial)\s+(\d{1,2}/\s?\d{1,2}/\d{4})\s+"
+        r"(-?[\d,]+\.\d{2})\s+[-\d,.]+\s+[-\d,.]+\s+(-?[\d,]+\.\d{2})",
+        t, re.M):
+        v = _amt(m.group(4))
+        if v is None: continue
+        rows.append({"Date": m.group(2).replace(" ", ""), "Invoice": m.group(1), "Amount": v,
+                     "Type": "Credit Memo" if v < 0 else "Invoice"})
+    return rows
+
+
+def parse_shoes(t):
+    """Shoes for Crews: Date [Invoice|Payment] #ref ... amount(s)."""
+    rows = []
+    for m in re.finditer(
+        r"^(\d{2}/\d{2}/\d{4})\s+(Invoice|Payment|Credit\s*Memo)\s+#?([\w-]+)\s+(.*)$",
+        t, re.M):
+        toks = re.findall(r"\(?-?[\d,]+\.\d{2}\)?", m.group(4))
+        if not toks: continue
+        v = _amt(toks[0])
+        if v is None: continue
+        typ = m.group(2).title()
+        if typ == "Payment" and v > 0: v = -v
+        rows.append({"Date": m.group(1), "Invoice": m.group(3), "Amount": v, "Type": typ})
+    return rows
+
+
+def parse_clark(t):
+    """Clark Service Group — amount = Bal. Due (last money before trailing age):
+      C003472 07/28/26 7.63 #Stovall The Stovall House -7.63 98
+      Unapplied 10/13/26 -1,151.30 0.00 481.67 -1,632.97 21
+      0054642 10/15/26 931.72 0.00 The Stovall House 931.72 19"""
+    rows = []
+    for line in t.split("\n"):
+        ls = line.strip()
+        mb = re.search(r"(-?[\d,]+\.\d{2})\s+\d{1,3}\s*$", ls)
+        if not mb: continue
+        bal = _amt(mb.group(1))
+        if bal is None: continue
+        if ls.lower().startswith("unapplied"):
+            md = re.match(r"^Unapplied\s+(\d{2}/\d{2}/\d{2})", ls)
+            rows.append({"Date": md.group(1) if md else "", "Invoice": "Unapplied",
+                         "Amount": bal, "Type": "Unapplied Cash"})
+            continue
+        m = re.match(r"^([A-Z]?\d{6,})\s+(\d{2}/\d{2}/\d{2})\s", ls)
+        if not m: continue
+        typ = "Credit Memo" if (bal < 0 or m.group(1).upper().startswith("C")) else "Invoice"
+        rows.append({"Date": m.group(2), "Invoice": m.group(1), "Amount": bal, "Type": typ})
+    return rows
+
+
+def parse_lulu(t):
+    """Lululemon: bus897459282672 Invoice 12-SEP-26 27-OCT-26 3,519.04 ..."""
+    rows = []
+    for m in re.finditer(
+        r"^(bus\w+)\s+(Invoice|Credit\s*Memo)\s+\d{2}-[A-Z]{3}-\d{2}\s+\d{2}-[A-Z]{3}-\d{2}\s+(\(?-?[\d,]+\.\d{2}\)?)",
+        t, re.M | re.I):
+        v = _amt(m.group(3))
+        if v is None: continue
+        typ = "Credit Memo" if "credit" in m.group(2).lower() or v < 0 else "Invoice"
+        rows.append({"Date": "", "Invoice": m.group(1), "Amount": v, "Type": typ})
+    return rows
+
+
+def parse_rti(t):
+    """Restaurant Technologies: 06-Apr-26 31131231 Invoice NET 10 16-Apr-26 $ 843.36
+    Receipt rows are payments — excluded."""
+    rows = []
+    for m in re.finditer(
+        r"^(\d{2}-[A-Za-z]{3}-\d{2})\s+(\d{4,})\s+(Invoice|Credit\s*Memo|Debit\s*Memo|Receipt)\s+.*?\$\s*(\(?-?[\d,]+\.\d{2}\)?)",
+        t, re.M):
+        v = _amt(m.group(4))
+        if v is None: continue
+        low = m.group(3).lower()
+        typ = ("Payment" if low == "receipt"
+               else "Credit Memo" if ("credit" in low or v < 0) else "Invoice")
+        rows.append({"Date": m.group(1), "Invoice": m.group(2), "Amount": v, "Type": typ})
+    return rows
+
+
+def parse_fortessa(t):
+    """Zwiesel Fortessa: the real invoice number is on the CONTINUATION line:
+      10/09/2026 Invoice EST030050 $855.67 11/08/2026 $855.67 $855.67
+      #INV037110159 37
+    GL stores INV####### — so the continuation number wins over the EST order no."""
+    rows = []
+    lines = t.split("\n")
+    for i, line in enumerate(lines):
+        m = re.search(r"(\d{2}/\d{2}/\d{4})\s+(Invoice|Credit\s*Memo|Payment)\s+(\S+)\s+(\(?\$?-?[\d,]+\.\d{2}\)?)", line)
+        if not m: continue
+        if "balance forward" in line.lower(): continue
+        inv = m.group(3)
+        if i + 1 < len(lines):
+            m2 = re.match(r"#\s*([A-Z]*\d+)", lines[i + 1].strip())
+            if m2: inv = m2.group(1)
+        v = _amt(m.group(4))
+        if v is None or abs(v) < 0.01: continue
+        low = m.group(2).lower()
+        if low == "payment":
+            monies = re.findall(r"\(?\$?-?[\d,]+\.\d{2}\)?", line)
+            applied = _amt(monies[-2]) if len(monies) >= 3 else v
+            rows.append({"Date": m.group(1), "Invoice": inv, "Amount": -abs(applied),
+                         "Type": "Payment"})
+        else:
+            typ = "Credit Memo" if ("credit" in low or v < 0) else "Invoice"
+            rows.append({"Date": m.group(1), "Invoice": inv, "Amount": v, "Type": typ})
+    return rows
+
+
+def parse_gfs(t):
+    """Gordon Food Service open-items statement. The 'INVOICE #' column can hold
+    a numeric reference OR free-text description ('banquets', 'the orangery') —
+    those rows were being dropped (Jasmine's PO-column complaint). The real
+    document number is ALWAYS the first token; amount is the money immediately
+    before the due date.
+      9041076637 10/08/2026 INVOICE banquets 51.02 11/06/2026 -5
+      2003875157 10/16/2026 CREDIT 9041298381 -85.63 11/13/2026 -12
+      9040924119 10/05/2026 INVOICE 362.03 11/06/2026 -5"""
+    rows = []
+    pat = re.compile(
+        r"^(\S+)\s+(\d{2}/\d{2}/\d{4})\s+(INVOICE|CREDIT|PAYMENT)\s+(?:.*?\s)??"
+        r"(-?[\d,]+\.\d{2})\s+\d{2}/\d{2}/\d{4}\s+-?\d+\s*$")
+    for line in t.split("\n"):
+        m = pat.match(line.strip())
+        if not m: continue
+        v = _amt(m.group(4))
+        if v is None: continue
+        typ = ("Payment" if m.group(3) == "PAYMENT"
+               else "Credit Memo" if m.group(3) == "CREDIT" or v < 0 else "Invoice")
+        rows.append({"Date": m.group(2), "Invoice": m.group(1), "Amount": v, "Type": typ})
+    return rows
+
+
+def parse_cozzini(t):
+    """Cozzini: 3/23/2026 Invoice #C20667150 66.88 66.88"""
+    rows = []
+    for m in re.finditer(
+        r"^(\d{1,2}/\d{1,2}/\d{4})\s+(Invoice|Payment|Credit\s*Memo)\s+#(\S+)\s+(\(?-?[\d,]+\.\d{2}\)?)",
+        t, re.M):
+        v = _amt(m.group(4))
+        if v is None: continue
+        typ = m.group(2).title()
+        if typ == "Payment" and v > 0: v = -v
+        rows.append({"Date": m.group(1), "Invoice": m.group(3), "Amount": v, "Type": typ})
+    return rows
+
+
+def parse_ed_don(t):
+    """Edward Don: credits print as (240.68 USD) and must stay NEGATIVE —
+    the generic parser read them as positive invoices, breaking Layer 1.
+      0001250580 0035977189 Oct 04 2026 Lindsey Nov 03 2026 900.10 USD 900.10 USD"""
+    rows = []
+    for line in t.split("\n"):
+        m = re.match(r"^\d{10}\s+(\d{6,12})\s+([A-Z][a-z]{2}\s+\d{2}\s+\d{4})\s+", line.strip())
+        if not m: continue
+        monies = re.findall(r"(\(?[\d,]+\.\d{2})\s*USD\)?", line)
+        if not monies: continue
+        raw = monies[-1]
+        neg = raw.startswith("(")
+        v = _amt(raw.lstrip("("))
+        if v is None: continue
+        if neg: v = -v
+        rows.append({"Date": m.group(2), "Invoice": m.group(1), "Amount": v,
+                     "Type": "Credit Memo" if v < 0 else "Invoice"})
+    return rows
+
+
 PARSERS = {k: parse_generic for k in VM if k not in ("US PAPER", "WRI", "AMAZON")}
 PARSERS["US PAPER"] = parse_us_paper
 PARSERS["WRI"] = parse_wrights
-PARSERS["COF BAR"] = parse_generic
+PARSERS["COF BAR"] = parse_gfs
+PARSERS["GFS"] = parse_gfs
+PARSERS["CKS"] = parse_cks
+PARSERS["CKS BAR"] = parse_cks
+PARSERS["DF BAKERY"] = parse_df_bakery
+PARSERS["EMERGENCY PEST"] = parse_emergency_pest
+PARSERS["OTT"] = parse_ott
+PARSERS["SHOES FOR CREWS"] = parse_shoes
+PARSERS["CLARK SERV"] = parse_clark
+PARSERS["CLARK"] = parse_clark
+PARSERS["LULU STATEMENT"] = parse_lulu
+PARSERS["LULU"] = parse_lulu
+PARSERS["LULULEMON"] = parse_lulu
+PARSERS["RTI"] = parse_rti
+PARSERS["RESTAURANT TECH"] = parse_rti
+PARSERS["FORTESSA"] = parse_fortessa
+PARSERS["ZWIESEL FORTESSA"] = parse_fortessa
+PARSERS["COZZINI"] = parse_cozzini
+PARSERS["ED DON"] = parse_ed_don
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  HELPERS
