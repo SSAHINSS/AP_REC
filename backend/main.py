@@ -152,6 +152,11 @@ def _startup():
 UPLOAD_DIR = Path(tempfile.mkdtemp())
 
 # ── Health ─────────────────────────────────────────────────────────────────
+@app.get("/robots.txt")
+def robots():
+    return Response(content="User-agent: *\nAllow: /\n", media_type="text/plain")
+
+
 @app.get("/health")
 def health():
     from reconciliation_engine import ENGINE_VERSION
