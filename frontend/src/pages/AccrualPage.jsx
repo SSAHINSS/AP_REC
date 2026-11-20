@@ -84,8 +84,9 @@ export default function AccrualPage() {
           const [grp, label] = k.split('::')
           try {
             const info = await accrualRowinfo({ entity: e, group: grp, label, period: per })
-            return [k, { ...r, acct: info.acct_no, loc: info.location_id,
-                         vendor_valid: info.vendor_valid }]
+            return [k, { ...r, acct: info.acct_no, loc: r.loc || info.location_id,
+                         vendor_valid: info.vendor_valid,
+                         locs: info.entity_locations || [] }]
           } catch { return [k, r] }
         })).then(pairs => {
           setRows(prev => {
@@ -128,10 +129,13 @@ export default function AccrualPage() {
     setRows(next); scheduleSave(next, creditAcct)
     try {
       const info = await accrualRowinfo({ entity, group: g, label, period })
-      next = { ...next, [k]: { on: true, amount: cur?.amount ?? '', acct: info.acct_no,
-                               loc: info.location_id, vendor_valid: info.vendor_valid } }
+      next = { ...next, [k]: { ...(cur || {}), on: true, amount: cur?.amount ?? '',
+                               acct: info.acct_no, loc: cur?.loc || info.location_id,
+                               vendor_valid: info.vendor_valid,
+                               locs: info.entity_locations || [], loading: false } }
     } catch {
-      next = { ...next, [k]: { on: true, amount: cur?.amount ?? '', acct: cur?.acct || '', loc: cur?.loc || '' } }
+      next = { ...next, [k]: { ...(cur || {}), on: true, amount: cur?.amount ?? '',
+                               acct: cur?.acct || '', loc: cur?.loc || '', loading: false } }
     }
     setRows(next); scheduleSave(next, creditAcct)
   }
@@ -139,17 +143,34 @@ export default function AccrualPage() {
     const next = { ...rows, [k]: { ...rows[k], [field]: value } }
     setRows(next); scheduleSave(next, creditAcct)
   }
+  function setItems(k, items) {
+    const next = { ...rows, [k]: { ...rows[k], items } }
+    setRows(next); scheduleSave(next, creditAcct)
+  }
+  function setItem(k, idx, field, value) {
+    const items = (rows[k]?.items || []).map((it, i) => i === idx ? { ...it, [field]: value } : it)
+    setItems(k, items)
+  }
+  const rowTotal = st => (st?.items?.length
+    ? st.items.reduce((s, it) => { const v = evalAmount(it.amt); return s + (v > 0 ? v : 0) }, 0)
+    : (evalAmount(st?.amount) > 0 ? evalAmount(st?.amount) : 0))
   function setCredit(v) {
     setCreditAcct(v); scheduleSave(rows, v)
   }
 
-  const activeLines = Object.entries(rows)
-    .filter(([, r]) => r.on && evalAmount(r.amount) > 0)
-    .map(([k, r]) => {
-      const [group, label] = k.split('::')
-      return { label, group, amount: evalAmount(r.amount),
-               acct_no: r.acct, location_id: r.loc }
-    })
+  const activeLines = Object.entries(rows).flatMap(([k, r]) => {
+    if (!r.on) return []
+    const [group, label] = k.split('::')
+    if (r.items?.length) {
+      return r.items
+        .filter(it => evalAmount(it.amt) > 0)
+        .map(it => ({ label, group, amount: evalAmount(it.amt),
+                      acct_no: r.acct, location_id: it.loc || r.loc,
+                      invoice: (it.inv || '').trim() }))
+    }
+    const v = evalAmount(r.amount)
+    return v > 0 ? [{ label, group, amount: v, acct_no: r.acct, location_id: r.loc }] : []
+  })
   const accrualTotal = activeLines.reduce((s, l) => s + l.amount, 0)
 
   async function doExport() {
@@ -308,6 +329,7 @@ export default function AccrualPage() {
                                    style={{ cursor: 'pointer' }} />
                             {st?.on && (
                               <>
+                                {!st.items?.length && (
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                   <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>$</span>
                                   <input type="text" inputMode="decimal" placeholder="0.00"
@@ -326,24 +348,90 @@ export default function AccrualPage() {
                                          }}
                                          style={inp(110)} />
                                 </span>
-                                <span title="Debit account and Sage location — set automatically from this vendor's posting history in the selected entity"
+                                )}
+                                {st.items?.length > 0 && (
+                                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700,
+                                                 color: 'var(--ox)', whiteSpace: 'nowrap' }}>
+                                    ${fmtAmount(rowTotal(st))}
+                                  </span>
+                                )}
+                                <button onClick={() => st.items?.length
+                                          ? setItems(k, [])
+                                          : setItems(k, [{ inv: '', amt: st.amount || '', loc: st.loc }])}
+                                        title={st.items?.length ? 'Back to a single amount' : 'List the individual invoices being accrued'}
+                                        style={itemBtn(st.items?.length > 0)}>
+                                  {st.items?.length ? `${st.items.length} invoice${st.items.length === 1 ? '' : 's'} ×` : '+ invoices'}
+                                </button>
+                                <span title="Debit account — set automatically from this vendor's posting history in the selected entity"
                                       style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)',
                                                whiteSpace: 'nowrap' }}>
                                   {st.loading ? 'looking up acct/location…'
-                                    : st.acct ? `→ ${st.acct} @ ${st.loc}` : ''}
+                                    : st.acct ? `→ ${st.acct} @` : ''}
                                 </span>
+                                {!st.loading && st.acct && !st.items?.length && (
+                                  (st.locs?.length > 1) ? (
+                                    <select value={st.loc || ''} onChange={e => setField(k, 'loc', e.target.value)}
+                                            title="Sage location for the debit line" style={locSel}>
+                                      {st.locs.map(L => <option key={L} value={L}>{L}</option>)}
+                                    </select>
+                                  ) : (
+                                    <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>{st.loc}</span>
+                                  )
+                                )}
+                                {!st.loading && st.acct && st.items?.length > 0 && (
+                                  <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)' }}>…</span>
+                                )}
                                 {st.vendor_valid === false && (
-                                  <span title={'This vendor name is not in the Sage active-vendor list from your JE template, so the export would block this line. If the vendor IS active in Sage, the template\'s vendor list is out of date.'}
+                                  <span title={'This vendor name was not found in the GL with a Sage Vendor ID, so the export would block this line.'}
                                         style={{ color: 'var(--warn)', fontSize: 10,
                                                  border: '1px solid var(--warn)', borderRadius: 2,
                                                  padding: '1px 6px', fontFamily: 'var(--mono)',
                                                  whiteSpace: 'nowrap', cursor: 'help' }}>
-                                    ⚠ not in Sage vendor list
+                                    ⚠ not in Sage
                                   </span>
                                 )}
                               </>
                             )}
                           </span>
+                          )}
+                          {st?.on && st.items?.length > 0 && (
+                            <div style={{ marginTop: 6, paddingLeft: 22, display: 'flex',
+                                          flexDirection: 'column', gap: 4 }}>
+                              {st.items.map((it, idx) => (
+                                <span key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                  <input type="text" placeholder="invoice #" value={it.inv}
+                                         onChange={e => setItem(k, idx, 'inv', e.target.value)}
+                                         style={inp(130)} />
+                                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>$</span>
+                                  <input type="text" inputMode="decimal" placeholder="0.00" value={it.amt}
+                                         onChange={e => setItem(k, idx, 'amt', e.target.value)}
+                                         onKeyDown={e => {
+                                           if (e.key === 'Enter') {
+                                             const v = evalAmount(it.amt)
+                                             if (!isNaN(v)) setItem(k, idx, 'amt', fmtAmount(v))
+                                           }
+                                         }}
+                                         onBlur={() => {
+                                           const v = evalAmount(it.amt)
+                                           if (!isNaN(v) && fmtAmount(v) !== String(it.amt)) setItem(k, idx, 'amt', fmtAmount(v))
+                                         }}
+                                         style={inp(96)} />
+                                  {(st.locs?.length > 1) && (
+                                    <select value={it.loc || st.loc || ''}
+                                            onChange={e => setItem(k, idx, 'loc', e.target.value)}
+                                            title="Sage location for this invoice line" style={locSel}>
+                                      {st.locs.map(L => <option key={L} value={L}>{L}</option>)}
+                                    </select>
+                                  )}
+                                  <button onClick={() => setItems(k, st.items.filter((_, i) => i !== idx))}
+                                          title="Remove this line" style={xBtn}>×</button>
+                                </span>
+                              ))}
+                              <button onClick={() => setItems(k, [...st.items, { inv: '', amt: '', loc: st.loc }])}
+                                      style={{ ...itemBtn(false), alignSelf: 'flex-start' }}>
+                                + add invoice
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -404,6 +492,19 @@ const th = extra => ({ padding: '8px 8px', textAlign: 'right', fontWeight: 600, 
   position: 'sticky', top: 0, zIndex: 3, background: 'var(--surface)',
   boxShadow: '0 1px 0 var(--border)', ...extra })
 const td = extra => ({ padding: '5px 8px', textAlign: 'right', whiteSpace: 'nowrap', ...extra })
+const itemBtn = active => ({
+  fontFamily: 'var(--mono)', fontSize: 10, cursor: 'pointer', padding: '2px 8px',
+  borderRadius: 2, whiteSpace: 'nowrap',
+  color: active ? 'var(--ox)' : 'var(--muted)',
+  background: active ? 'rgba(255,112,48,0.1)' : 'transparent',
+  border: active ? '1px solid var(--ox-b)' : '1px solid var(--border)',
+})
+const xBtn = { fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer',
+  color: 'var(--muted)', background: 'transparent', border: '1px solid var(--border)',
+  borderRadius: 2, width: 22, height: 22, lineHeight: '18px', padding: 0 }
+const locSel = { fontFamily: 'var(--mono)', fontSize: 10, padding: '2px 4px',
+  background: 'var(--bg)', color: 'var(--text)',
+  border: '1px solid var(--border)', borderRadius: 2 }
 const inp = w => ({ fontFamily: 'var(--mono)', fontSize: 11, width: w, padding: '3px 6px',
   background: 'var(--bg)', color: 'var(--text)',
   border: '1px solid var(--border)', borderRadius: 2 })

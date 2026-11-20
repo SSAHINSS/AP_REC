@@ -670,7 +670,7 @@ async def trends_cardholder_detail_ep(
 
 # ── Accrual Builder (experimental) ─────────────────────────────────────────
 from accrual_engine import (account_choices, row_defaults as accrual_row_defaults,
-                            build_je_csv)
+                            build_je_csv, entity_locations as accrual_entity_locations)
 
 
 def _with_gl(db, user, fn):

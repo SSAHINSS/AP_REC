@@ -77,6 +77,14 @@ def account_choices(gl_path):
     return from_gl if from_gl else DEFAULT_ACCRUAL_ACCOUNTS
 
 
+def entity_locations(gl_path, entity):
+    """All Sage locations this entity posts under (for the location dropdowns —
+    OE and Stovall span multiple locations and accruals get split across them)."""
+    df = load_gl(gl_path)
+    df = df[df["Entity"] == entity.upper()]
+    return sorted(df["Location ID"].dropna().astype(str).unique())
+
+
 def row_defaults(gl_path, entity, group, label, period):
     """Dominant account + location for one vendor row (entity+group), from the
     trailing window ending at `period` — prefilled, editable, Sage-validated."""
@@ -86,10 +94,12 @@ def row_defaults(gl_path, entity, group, label, period):
     end = pd.Period(period, freq="M")
     df = df[df["Period"].isin(pd.period_range(end - 12, end, freq="M"))]
     ref = _gl_reference(gl_path)
+    ent_locs = entity_locations(gl_path, entity)
     if df.empty:
         return {"acct_no": "", "location_id": "",
                 "vendor_id": ref["vendors"].get(str(label), ""),
-                "vendor_valid": str(label) in ref["vendors"]}
+                "vendor_valid": str(label) in ref["vendors"],
+                "entity_locations": ent_locs}
     acct = (df.groupby("Account no")["Amount"].apply(lambda s: s.abs().sum())
               .sort_values(ascending=False).index[0])
     loc = (df.groupby("Location ID")["Amount"].apply(lambda s: s.abs().sum())
@@ -98,7 +108,8 @@ def row_defaults(gl_path, entity, group, label, period):
             "vendor_id": ref["vendors"].get(str(label), ""),
             "acct_valid": str(acct) in ref["accounts"],
             "location_valid": str(loc) in ref["locations"],
-            "vendor_valid": str(label) in ref["vendors"]}
+            "vendor_valid": str(label) in ref["vendors"],
+            "entity_locations": ent_locs}
 
 
 def entity_main_location(gl_path, entity):
@@ -139,6 +150,7 @@ def build_je_csv(gl_path, entity, period, credit_acct, lines, credit_location=No
         label = str(ln.get("label") or "").strip()
         acct = str(ln.get("acct_no") or "").strip()
         loc = str(ln.get("location_id") or "").strip()
+        invoice = str(ln.get("invoice") or "").strip()
         try:
             amt = round(float(ln.get("amount") or 0), 2)
         except Exception:
@@ -153,7 +165,8 @@ def build_je_csv(gl_path, entity, period, credit_acct, lines, credit_location=No
         if label not in ref["vendors"]:
             problems.append(f"{where}: vendor {label!r} was not found in the GL "
                             f"with a Sage Vendor ID.")
-        clean.append({"label": label, "acct": acct, "loc": loc, "amount": amt})
+        clean.append({"label": label, "acct": acct, "loc": loc, "amount": amt,
+                      "invoice": invoice})
     if problems:
         raise ValueError(problems)
 
@@ -165,7 +178,7 @@ def build_je_csv(gl_path, entity, period, credit_acct, lines, credit_location=No
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\r\n")
     w.writerow(JE_HEADERS)
-    def row(line_no, acct, loc, memo, debit, credit, vendor_id=""):
+    def row(line_no, acct, loc, memo, debit, credit, vendor_id="", document=""):
         r = [""] * len(JE_HEADERS)
         r[1] = "GJ"
         r[2] = fmt(month_end)
@@ -175,7 +188,7 @@ def build_je_csv(gl_path, entity, period, credit_acct, lines, credit_location=No
         r[6] = str(line_no)
         r[7] = acct
         r[8] = loc
-        r[10] = f"ACCR{y}{mo:02d}"
+        r[10] = document or f"ACCR{y}{mo:02d}"
         r[11] = memo
         r[12] = f"{debit:.2f}" if debit else ""
         r[13] = f"{credit:.2f}" if credit else ""
@@ -184,8 +197,10 @@ def build_je_csv(gl_path, entity, period, credit_acct, lines, credit_location=No
     n = 0
     for l in clean:
         n += 1
+        # MEMO stays the Sage vendor name; the invoice number rides in DOCUMENT
         w.writerow(row(n, l["acct"], l["loc"], l["label"], l["amount"], 0,
-                       ref["vendors"].get(l["label"], "")))
+                       ref["vendors"].get(l["label"], ""),
+                       document=l["invoice"]))
     n += 1
     w.writerow(row(n, str(credit_acct), credit_loc,
                    f"Accrued AP - {month_end.strftime('%B %Y')}", 0, total))
