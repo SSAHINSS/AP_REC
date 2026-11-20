@@ -23,9 +23,13 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 # ── Engine ─────────────────────────────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./aprs.db")
-# Railway/Heroku style URLs use postgres:// — SQLAlchemy needs postgresql://
+# Railway/Heroku style URLs use postgres:// — SQLAlchemy needs postgresql://.
+# Name the driver explicitly (+psycopg2): newer SQLAlchemy releases default
+# postgresql:// to the psycopg v3 driver, which is not installed.
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 _connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=_connect_args, pool_pre_ping=True)
